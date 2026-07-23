@@ -1,0 +1,8 @@
+streamlit==1.59.2
+pandas==3.0.3
+numpy==2.4.6
+lightgbm==4.7.0
+shap==0.52.0
+openai==2.46.0
+anthropic==0.118.0
+markdown2==2.5.5

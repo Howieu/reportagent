@@ -1,0 +1,13 @@
+.venv/
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.DS_Store
+*.pkl
+*.joblib
+*.model
+wk*_Online_*.html
+report*.html
+site/node_modules/
