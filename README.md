@@ -3,18 +3,18 @@
 > 把门店商业团队 **4 小时** 的周报工作压缩到 **1 分钟**。
 > 源自真实业务场景的自动化数分报告系统的产品化重构：数仓统一口径 · 规则+LLM 双引擎 · ML 归因与预测。
 
-![Python](https://img.shields.io/badge/Python-3.12-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-App-red)
+![Python](https://img.shields.io/badge/Python-3.12-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-App-red) [![test](https://github.com/Howieu/reportagent/actions/workflows/test.yml/badge.svg)](https://github.com/Howieu/reportagent/actions/workflows/test.yml)
 
 ## 在线访问
 
 | 入口 | 地址 | 说明 |
 |---|---|---|
-| **固定域名落地页** | `https://demo.<个人域名>` | 项目介绍 + 内嵌交互 Demo（Cloudflare Pages） |
+| **固定域名落地页** | 🔄 待部署（Cloudflare Pages，尚未上线，暂无地址） | 项目介绍 + 内嵌交互 Demo |
 | **Streamlit 直达** | `https://ikea-report-agent.streamlit.app` | 交互应用本体（空闲会休眠，打开后稍等唤醒） |
 | **GitHub 源码** | `https://github.com/Howieu/reportagent` | 代码、测试与部署配置 |
 
-> 落地页 iframe 加载失败或休眠时，「新窗口打开 Demo」备用入口始终可用。
-> 绑定个人域名后，将上表与 `site/index.html` 中的占位域名替换为真实值即可。
+> 落地页尚未部署前，请直接使用 **Streamlit 直达** 入口体验完整 Demo。
+> 部署完成并绑定域名后，将上表与 `site/index.html` 中的占位域名替换为真实值即可。
 
 ## 一分钟了解
 
@@ -30,6 +30,14 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+跑测试 / lint（需要开发依赖，CI 用同一套）：
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+```
+
 打开浏览器后：左侧选 **门店 / HFB（支持 `1-3,7` 形式）/ 周次** → 点击 **生成报告** → 页面内渲染完整报告，可下载 HTML。
 
 **可选：启用 LLM 润色**（不配置也能完整演示，系统自动降级为规则模板）：
@@ -41,7 +49,7 @@ streamlit run app.py
 ## 部署架构
 
 ```text
-demo.<个人域名>
+demo.<个人域名>（🔄 待部署）
         │
         ▼
 Cloudflare Pages（site/ 静态落地页）
@@ -56,7 +64,7 @@ Cloudflare Pages（site/ 静态落地页）
 ```
 
 - **Streamlit Cloud**：从 `app.py` 部署，固定易读的 `*.streamlit.app` 子域名；
-- **Cloudflare Pages**：从 `site/` 目录部署静态落地页，绑定 `demo.<个人域名>`；
+- **Cloudflare Pages**：从 `site/` 目录部署静态落地页，绑定 `demo.<个人域名>`（🔄 待部署）；
 - 不使用心跳绕过 Streamlit 休眠机制；若后续要求单一域名 / 持续在线，
   将同一应用 Docker 化部署到 Render / Cloud Run，Cloudflare 域名保持不变。
 
@@ -123,7 +131,8 @@ Cloudflare Pages（site/ 静态落地页）
 
 ## 产品化路线图
 
-1. **配置化**：HFB / 周次 / 贡献度阈值全部参数化（✅ 本 Demo 已实现）；
+1. **配置化**：HFB / 周次已参数化（✅ 本 Demo 已实现）；潜力识别阈值当前为规则引擎内置常量，
+   UI 暴露为可调参数（🔄 待实现）；
 2. **IM 推送**：飞书/企微定时推送 PDF，触达一线店长；
 3. **追问式分析**：在报告上直接对话追问（"为什么 PA 013 上升？"）；
 4. **评估体系**：结论准确率抽检 + 业务采纳率回流，持续迭代 prompt 与规则阈值。
