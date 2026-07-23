@@ -50,10 +50,17 @@ def online_for_human(df2, hfb):
     return results
 
 
+def _safe_round(value):
+    """将 ind.LY 值取整；若为 None/NaN 返回 None；若以 0-2 区间的小数口径存储则先 ×100。"""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    if isinstance(value, (int, float)) and 0 < value < 2:
+        return round(value * 100)
+    return round(value)
+
+
 def _format_ind(ind_value):
-    if 0 < ind_value < 2:
-        return round(ind_value * 100)
-    return round(ind_value)
+    return _safe_round(ind_value)
 
 
 def online_for_llm(df2, hfb):
@@ -79,14 +86,6 @@ def online_for_llm(df2, hfb):
 # ---------------------------------------------------------------------------
 # Sales Tree
 # ---------------------------------------------------------------------------
-
-def _safe_round(value):
-    if value is None or (isinstance(value, float) and math.isnan(value)):
-        return None
-    if isinstance(value, (int, float)) and 0 < value < 2:
-        return round(value * 100)
-    return round(value)
-
 
 def retrieve_sales_tree_data(df2, hfb):
     hfb_perf = df2[(df2['hfb_no'] == hfb) & (df2['date_type'] == 'Weekly')].iloc[0]
