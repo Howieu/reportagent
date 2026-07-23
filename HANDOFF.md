@@ -1,11 +1,11 @@
 # Handoff 交接文档 — 智能业绩诊断 Agent 产品 Demo
 
 > 交接日期：2026-07-23（v2 固定域名展示方案）
-> 项目状态：**v2 改造完成，17 项测试全绿，代码已推送 GitHub**
+> 项目状态：**v2 改造完成，17 项测试全绿，Streamlit 应用已上线**
 > 项目路径：`AI-Agent-Outputs/claude/ikea-report-agent-demo/`
-> GitHub：`https://github.com/Howieu/reportagent`（Private，部署/公开前转 Public）
-> Streamlit 固定子域名（待部署）：`https://ikea-report-agent.streamlit.app`
-> 固定域名落地页（待绑定）：`https://demo.<个人域名>`
+> GitHub：`https://github.com/Howieu/reportagent`（**Public**）
+> Streamlit 应用（✅ 已上线）：`https://ikea-report-agent.streamlit.app`（healthz 验证通过）
+> 固定域名落地页（🔄 Cloudflare Pages 部署中）：`https://demo.<个人域名>`
 
 ---
 
@@ -97,17 +97,18 @@ ML 层   src/ml_insights.py      LightGBM+SHAP 归因（缺失时相关系数兜
 - ✅ ML 开启 + qty 口径冒烟：HFB 01 报告正常渲染；
 - ✅ 干净 venv 按 pin 版本安装导入验证通过；
 - ✅ secret 模式扫描无命中（无明文密钥、无内网地址、无个人路径残留）；
-- ✅ 代码推送 GitHub 私有仓库成功。
+- ✅ 代码推送 GitHub 成功，仓库已转 Public；
+- ✅ Streamlit Cloud 部署完成（Python 3.12），`ikea-report-agent.streamlit.app/healthz` 返回 ok。
 
 ## 8. 待办（需本人操作的外部事项）
 
-1. **轮换原 notebook 中暴露的 ODPS/Azure 凭证**（最高优先级）；
-2. **Streamlit Cloud**：连接 `Howieu/reportagent`，从 `app.py` 部署，
-   自定义子域名设为 `ikea-report-agent`；
-3. **Cloudflare Pages**：连接同一仓库，构建目录设为 `site/`，绑定 `demo.<个人域名>`；
-4. 域名确定后替换 README 在线访问表中的 `demo.<个人域名>` 占位；
-5. 仓库转 Public 前再跑一次 secret scan（如安装 gitleaks：`gitleaks dir .`）；
-6. 验收：移动端打开落地页、休眠唤醒后 iframe 与"新窗口打开"均可用、三步内生成首份报告。
+1. ~~轮换原 notebook 中暴露的 ODPS/Azure 凭证~~ —— 已离职，确认密钥随账号失效即可；本地原 notebook 建议删除并清空回收站；
+2. ~~Streamlit Cloud 部署 + 固定子域名~~ —— ✅ 已完成；
+3. **Cloudflare Pages（进行中）**：连接 `Howieu/reportagent`，Framework=None、构建命令留空、
+   输出目录 `site/`；部署后验证落地页、iframe 嵌入、"新窗口打开"备用入口与移动端排版；
+4. **绑定域名（可选）**：有自有域名则在 Pages 项目 Custom domains 绑定 `demo.<个人域名>`；
+   没有则直接用 `xxx.pages.dev` 免费地址；域名确定后替换 README / site / 本文档占位；
+5. 验收：移动端打开落地页、休眠唤醒后 iframe 与"新窗口打开"均可用、三步内生成首份报告。
 
 ## 9. 已知限制
 
