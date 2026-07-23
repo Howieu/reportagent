@@ -35,7 +35,7 @@ streamlit run app.py
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
-pytest
+python -m pytest
 ```
 
 打开浏览器后：左侧选 **门店 / HFB（支持 `1-3,7` 形式）/ 周次** → 点击 **生成报告** → 页面内渲染完整报告，可下载 HTML。
