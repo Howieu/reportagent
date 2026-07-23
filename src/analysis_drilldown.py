@@ -204,10 +204,12 @@ def potential_recognition(df_final, hfb, pa, family, item, focus, desc=True):
     article_data = df_final[(df_final['date_type'] == 'Weekly') & (df_final['pa_no'] == pa) &
                             (df_final['item_family'] == family) & (df_final['item_id'] == item) &
                             (df_final['hfb_no'] == hfb)]
-    article_perf = article_data.iloc[0]
-
     rolling_data = df_final[(df_final['date_type'] == 'Rolling 4wks') & (df_final['item_id'] == item) &
                             (df_final['hfb_no'] == hfb) & (df_final['item_family'] == family)]
+    if article_data.empty or rolling_data.empty:
+        return None, []
+
+    article_perf = article_data.iloc[0]
     rolling_perf = rolling_data.iloc[0]
 
     base_metric = focus.replace('_exc', '')
@@ -299,11 +301,8 @@ def anomaly_analysis(pre, pa_pred, article_pred, hfb, focus, rolling_nWKs=4,
                     art_top3 = {}
 
                 for item_id, (label, metric_str, pic_url) in article_results.items():
-                    try:
-                        potential, reasons = potential_recognition(
-                            pre, hfb, pa, family, item_id, focus, current_desc)
-                    except Exception:
-                        potential, reasons = None, []
+                    potential, reasons = potential_recognition(
+                        pre, hfb, pa, family, item_id, focus, current_desc)
                     if potential:
                         potential_html = (f"<span class='potential-high'>潜力【高】"
                                           f"：{'、'.join(reasons)}</span>")

@@ -11,7 +11,7 @@ Key 安全约定：API Key 仅保存在当前浏览器会话（st.session_state�
 
 import streamlit as st
 
-from src import llm, report
+from src import report
 from src.data_provider import MockDataProvider, ReportRequest
 from src.llm import LLMConfig
 from src.report import parse_hfb_input
@@ -73,6 +73,7 @@ tab_report, tab_about = st.tabs(["📈 生成业绩报告", "💡 产品说明"]
 with st.sidebar:
     st.header("报告配置")
     store = st.selectbox("门店", ["401", "402", "403"], index=0)
+    st.caption("仿真数据无门店级差异，门店选择仅影响报告标题展示，不改变分析结果。")
     hfb_input = st.text_input("HFB 编号（支持 1-3,7 形式）", value="1")
     week_info = st.text_input("周次", value="202527")
     focus = st.selectbox("分析指标", ["sales", "qty"], index=0,
@@ -203,7 +204,8 @@ with tab_about:
 - 报告不止陈述，直接指导行动：归因 Top3 特征、下周预测、潜力商品（附图）→ 补货 / 推广 / 陈列。
 
 ### 产品化路线图
-1. **配置化**：HFB / 周次 / 贡献度阈值全部参数化（本 Demo 已实现）；
+1. **配置化**：HFB / 周次已参数化（本 Demo 已实现）；潜力识别阈值目前为规则引擎内置常量，
+   UI 暴露为可调参数是下一步路线图项；
 2. **IM 推送**：飞书/企微定时推送 PDF，触达一线店长；
 3. **追问式分析**：在报告上直接对话追问（"为什么 PA 013 上升？"）；
 4. **评估体系**：结论准确率抽检 + 业务采纳率回流，持续迭代 prompt 与规则阈值。
