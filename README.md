@@ -9,12 +9,12 @@
 
 | 入口 | 地址 | 说明 |
 |---|---|---|
-| **固定域名落地页** | 🔄 待部署（Cloudflare Pages，尚未上线，暂无地址） | 项目介绍 + 内嵌交互 Demo |
+| **固定域名落地页** | `https://reportagent.vercel.app`（Vercel） | 项目介绍 + 内嵌交互 Demo |
 | **Streamlit 直达** | `https://ikea-report-agent.streamlit.app` | 交互应用本体（空闲会休眠，打开后稍等唤醒） |
 | **GitHub 源码** | `https://github.com/Howieu/reportagent` | 代码、测试与部署配置 |
 
-> 落地页尚未部署前，请直接使用 **Streamlit 直达** 入口体验完整 Demo。
-> 部署完成并绑定域名后，将上表与 `site/index.html` 中的占位域名替换为真实值即可。
+> 落地页由 Vercel 从 `site/` 目录自动部署（Root Directory = `site`，无构建步骤），
+> push 到 main 即自动发布。Streamlit 应用空闲休眠时，可通过落地页「新窗口打开」唤醒。
 
 ## 一分钟了解
 
@@ -49,10 +49,10 @@ python -m pytest
 ## 部署架构
 
 ```text
-demo.<个人域名>（🔄 待部署）
+reportagent.vercel.app
         │
         ▼
-Cloudflare Pages（site/ 静态落地页）
+Vercel（site/ 静态落地页，Git 集成自动部署）
   项目背景 / 架构 / 个人贡献 / 隐私说明
         │
         ├── iframe: ikea-report-agent.streamlit.app/?embed=true（懒加载 + 骨架屏）
@@ -64,9 +64,10 @@ Cloudflare Pages（site/ 静态落地页）
 ```
 
 - **Streamlit Cloud**：从 `app.py` 部署，固定易读的 `*.streamlit.app` 子域名；
-- **Cloudflare Pages**：从 `site/` 目录部署静态落地页，绑定 `demo.<个人域名>`（🔄 待部署）；
+- **Vercel**：Git 集成连接本仓库，Root Directory 设为 `site/`，Framework=None、
+  无构建命令，push 到 main 自动发布；免费 `*.vercel.app` 子域名；
 - 不使用心跳绕过 Streamlit 休眠机制；若后续要求单一域名 / 持续在线，
-  将同一应用 Docker 化部署到 Render / Cloud Run，Cloudflare 域名保持不变。
+  将同一应用 Docker 化部署到 Render / Cloud Run，Vercel 侧绑定自有域名即可保持不变。
 
 ## 方案架构：五层诊断流水线
 
