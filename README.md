@@ -155,8 +155,7 @@ flowchart TB
 
 > 读图要点：数字只经过 ② `metrics.py` 一个入口（LLM 不做算术）；③ 各模块同时产出
 > 人读 HTML 明细（`for_human`）与模型输入纯文本（`for_llm`）；两条虚线降级链保证
-> 无 Key / 缺依赖时报告仍能完整产出。逐条面试讲解动线见
-> [docs/architecture.md](docs/architecture.md)。
+> 无 Key / 缺依赖时报告仍能完整产出。
 
 ## 核心设计决策（为什么不只是"调 LLM 写报告"）
 
@@ -221,5 +220,3 @@ flowchart TB
 - 报告只记录 Provider、模型与调用状态，不记录 Key；
 - 公开版本已移除原 notebook 中的全部凭证、内网地址、绝对路径与真实输出；
 - 运行测试：`pytest`（含 Mock 跨进程确定性、LLM 降级、Key 不泄漏、AppTest 页面回归）。
-
-*本项目为求职作品集 Demo。*
