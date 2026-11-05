@@ -7,6 +7,7 @@
 - **对话问数：** 统计、排名、趋势、归因。回答附表格、图表和实际执行的 SQL。
 - **周度诊断报告：** 整体 → 渠道 → 销售树 → 子类 → 卖家 → 商品，可下载 HTML 和 PDF。
 - **漏斗分析：** 浏览 → 加购 → 成交，可选维度并逐级下钻。
+- **项目管理：** 按项目组织任务，报告和对话都归在任务里。
 - **模型校验：** 回答出现数据里没有的数字、把指数写成增幅或方向写反时，会退回规则文字。
 
 ## 本地运行
@@ -65,7 +66,7 @@ REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb REPORTAGENT_SEMANTIC=semantic.demo
 ## 第三方组件
 
 - [morphicons](https://github.com/guillermolg00/morphicons)（MIT）：图标变形。
-- [ReactDrops](https://reactdrops.dev)：`web/src/vendor/reactdrops` 里的 Liquid Glass Orb 和 Chromatic Button，遵循同目录 `LICENSE`，只作为本应用的一部分使用，不单独分发。
+- [ReactDrops](https://reactdrops.dev)：`web/src/vendor/reactdrops` 里的 Liquid Glass Orb，遵循同目录 `LICENSE`，只作为本应用的一部分使用，不单独分发。
 
 ## 已知限制
 

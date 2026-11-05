@@ -1,11 +1,18 @@
 import {
-  ArrowUp, Check, ChevronDown, ChevronRight, Download, Ellipsis, ExternalLink, FileText, Filter, Menu, PanelLeft,
-  PanelRight, Pencil, Plus, Search, Square, SquarePen, ThumbsDown, ThumbsUp, Trash2, X,
+  ArrowUp, Check, ChevronDown, ChevronRight, Download, Ellipsis, ExternalLink, FileText, Filter, Folder, FolderInput, FolderOpen, FolderPlus,
+  Menu, PanelLeft, PanelRight, Pencil, Plus, Search, Square, SquarePen, ThumbsDown, ThumbsUp, Trash2, X,
 } from 'lucide';
 import { MorphIcon } from 'morphicons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChromaticButton } from './vendor/reactdrops/chromatic-button';
 import { FluidAgentOrb } from './vendor/reactdrops/fluid-agent-orb';
+
+/** 简洁标识：实心圆里一条上升折线。 */
+const Logo = ({ size = 20 }) => (
+  <svg className="logo" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="12" fill="#0d0d0d" />
+    <path d="M6.5 15.5 10.5 11l3 2.5 4-5" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 const Icon = ({ icon, size = 16, ...rest }) => <MorphIcon icon={icon} size={size} strokeWidth={1.75} reducedMotion="user" {...rest} />;
 
@@ -20,55 +27,64 @@ async function api(path, options) {
 }
 const json = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
-// ---------- 会话栏 ----------
-function groupConversations(list) {
-  const now = Date.now() / 1000, day = 86400;
-  return [
-    ['最近 7 天', list.filter((c) => now - c.updated < 7 * day)],
-    ['最近 30 天', list.filter((c) => now - c.updated >= 7 * day && now - c.updated < 30 * day)],
-    ['更久', list.filter((c) => now - c.updated >= 30 * day)],
-  ].filter(([, items]) => items.length);
-}
-
-function ConversationRow({ item, active, onOpen, onChanged, onDeleted }) {
+// ---------- 左栏：项目 → 任务 ----------
+function useFloatingMenu() {
   const [menu, setMenu] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(item.title);
-  const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     if (!menu) return undefined;
-    const close = () => { setMenu(null); setConfirming(false); };
-    const t = setTimeout(() => document.addEventListener('click', close, { once: true }));
+    const close = () => setMenu(null);
+    const t = setTimeout(() => document.addEventListener('click', close));
     return () => { clearTimeout(t); document.removeEventListener('click', close); };
   }, [menu]);
-  const save = async () => {
-    setEditing(false);
-    await api(`/api/conversations/${item.id}`, json('PATCH', { title }));
-    onChanged();
-  };
+  return [menu, setMenu];
+}
+
+function InlineEdit({ value, label, onSave, onCancel }) {
+  const [text, setText] = useState(value);
+  const done = useRef(false);
+  const commit = () => { if (!done.current) { done.current = true; onSave(text); } };
+  return (
+    <input className="inline-edit" aria-label={label} autoFocus value={text} onChange={(e) => setText(e.target.value)} onFocus={(e) => e.target.select()} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { done.current = true; onCancel(); } }} />
+  );
+}
+
+function TaskRow({ item, active, projects, onOpen, onChanged, onDeleted }) {
+  const [menu, setMenu] = useFloatingMenu();
+  const [editing, setEditing] = useState(false);
   if (editing) {
     return (
       <div className="conv editing">
-        <input aria-label="会话名称" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setTitle(item.title); setEditing(false); } }} />
+        <InlineEdit value={item.title} label="任务名称" onCancel={() => setEditing(false)}
+          onSave={async (title) => { setEditing(false); await api(`/api/conversations/${item.id}`, json('PATCH', { title })); onChanged(); }} />
       </div>
     );
   }
+  const move = async (project) => { setMenu(null); await api(`/api/conversations/${item.id}`, json('PATCH', { project, move: true })); onChanged(); };
   return (
     <div className={`conv${active ? ' active' : ''}`}>
       <button className="conv-title" onClick={() => onOpen(item.id)} title={item.title}>{item.title}</button>
-      <button className="conv-more" aria-label="更多操作" onClick={(e) => { e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }); }}><Icon icon={Ellipsis} size={14} /></button>
+      <button className="conv-more" aria-label="任务操作" onClick={(e) => { e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, view: 'main' }); }}><Icon icon={Ellipsis} size={14} /></button>
       {menu && (
-        <div className="menu" style={{ left: menu.x, top: menu.y + 8 }} onClick={(e) => e.stopPropagation()}>
-          {confirming ? (
-            <>
-              <button className="danger" onClick={async () => { setMenu(null); await api(`/api/conversations/${item.id}`, { method: 'DELETE' }); onDeleted(item.id); }}>确认删除？</button>
-              <button onClick={() => { setMenu(null); setConfirming(false); }}>取消</button>
-            </>
-          ) : (
+        <div className="menu" style={{ left: Math.min(menu.x, window.innerWidth - 180), top: Math.min(menu.y + 8, window.innerHeight - 220) }} onClick={(e) => e.stopPropagation()}>
+          {menu.view === 'main' && (
             <>
               <button onClick={() => { setMenu(null); setEditing(true); }}><Icon icon={Pencil} size={14} />重命名</button>
-              <button className="danger" onClick={() => setConfirming(true)}><Icon icon={Trash2} size={14} />删除</button>
+              <button onClick={() => setMenu({ ...menu, view: 'move' })}><Icon icon={FolderInput} size={14} />移到项目</button>
+              <button className="danger" onClick={() => setMenu({ ...menu, view: 'confirm' })}><Icon icon={Trash2} size={14} />删除</button>
+            </>
+          )}
+          {menu.view === 'move' && (
+            <>
+              {projects.filter((p) => p.id !== item.project).map((p) => <button key={p.id} onClick={() => move(p.id)}><Icon icon={Folder} size={14} /><span className="menu-text">{p.name}</span></button>)}
+              {item.project && <button onClick={() => move(null)}>移出项目</button>}
+              {!projects.length && <span className="menu-empty">还没有项目</span>}
+            </>
+          )}
+          {menu.view === 'confirm' && (
+            <>
+              <button className="danger" onClick={async () => { setMenu(null); await api(`/api/conversations/${item.id}`, { method: 'DELETE' }); onDeleted(item.id); }}>确认删除？</button>
+              <button onClick={() => setMenu(null)}>取消</button>
             </>
           )}
         </div>
@@ -77,38 +93,103 @@ function ConversationRow({ item, active, onOpen, onChanged, onDeleted }) {
   );
 }
 
-function Sidebar({ meta, conversations, activeId, onNew, onOpen, onRefresh, onDeleted, onReport, onFunnel, onCollapse }) {
+function ProjectGroup({ project, tasks, open, active, onToggle, onNewTask, onChanged, renderTask }) {
+  const [menu, setMenu] = useFloatingMenu();
+  const [editing, setEditing] = useState(false);
+  return (
+    <section className="project">
+      {editing ? (
+        <div className="project-head editing">
+          <InlineEdit value={project.name} label="项目名称" onCancel={() => setEditing(false)}
+            onSave={async (name) => { setEditing(false); await api(`/api/projects/${project.id}`, json('PATCH', { name })); onChanged(); }} />
+        </div>
+      ) : (
+        <div className={`project-head${active ? ' active' : ''}`}>
+          <button className="project-name" aria-expanded={open} onClick={onToggle}>
+            <Icon icon={open ? FolderOpen : Folder} /><span>{project.name}</span>
+          </button>
+          <div className="project-actions">
+            <button aria-label="项目操作" onClick={(e) => { e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, view: 'main' }); }}><Icon icon={Ellipsis} size={14} /></button>
+            <button aria-label={`在 ${project.name} 新建任务`} onClick={onNewTask}><Icon icon={Plus} size={14} /></button>
+          </div>
+          {!!tasks.length && <span className="count">{tasks.length}</span>}
+          {menu && (
+            <div className="menu" style={{ left: Math.min(menu.x, window.innerWidth - 180), top: menu.y + 8 }} onClick={(e) => e.stopPropagation()}>
+              {menu.view === 'main' ? (
+                <>
+                  <button onClick={() => { setMenu(null); setEditing(true); }}><Icon icon={Pencil} size={14} />重命名</button>
+                  <button className="danger" onClick={() => setMenu({ ...menu, view: 'confirm' })}><Icon icon={Trash2} size={14} />删除项目</button>
+                </>
+              ) : (
+                <>
+                  <span className="menu-empty">任务会保留，只是移出项目</span>
+                  <button className="danger" onClick={async () => { setMenu(null); await api(`/api/projects/${project.id}`, { method: 'DELETE' }); onChanged(); }}>确认删除</button>
+                  <button onClick={() => setMenu(null)}>取消</button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {open && (
+        <div className="project-tasks">
+          {tasks.map(renderTask)}
+          {!tasks.length && <button className="project-empty" onClick={onNewTask}>新建任务</button>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Sidebar({ meta, conversations, projects, activeId, activeProject, onNew, onOpen, onRefresh, onDeleted, onReport, onFunnel, onCollapse }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [closed, setClosed] = useState({});
+  const [adding, setAdding] = useState(false);
   const shown = conversations.filter((c) => !query || c.title.toLowerCase().includes(query.toLowerCase()));
+  const known = new Set(projects.map((p) => p.id));
+  const loose = shown.filter((c) => !c.project || !known.has(c.project));
+  const renderTask = (c) => (
+    <TaskRow key={c.id} item={c} active={c.id === activeId} projects={projects} onOpen={onOpen} onChanged={onRefresh} onDeleted={onDeleted} />
+  );
   return (
     <aside className="side">
       <div className="side-head">
-        <b>{meta?.branding?.name || 'ReportAgent'}</b>
+        <div className="brand"><Logo /><b>{meta?.branding?.name || 'ReportAgent'}</b></div>
         <div className="side-actions">
-          <button className="icon-btn" aria-label="搜索会话" onClick={() => { setSearching(!searching); setQuery(''); }}><Icon icon={searching ? X : Search} /></button>
-          <button className="icon-btn" aria-label="收起会话栏" onClick={onCollapse}><Icon icon={PanelLeft} /></button>
+          <button className="icon-btn" aria-label="搜索任务" onClick={() => { setSearching(!searching); setQuery(''); }}><Icon icon={searching ? X : Search} /></button>
+          <button className="icon-btn" aria-label="收起左栏" onClick={onCollapse}><Icon icon={PanelLeft} /></button>
         </div>
       </div>
-      {searching && <input className="side-search" autoFocus placeholder="搜索会话" aria-label="搜索会话" value={query} onChange={(e) => setQuery(e.target.value)} />}
+      {searching && <input className="side-search" autoFocus placeholder="搜索任务" aria-label="搜索任务" value={query} onChange={(e) => setQuery(e.target.value)} />}
       <nav className="side-nav">
-        <button onClick={onNew}><Icon icon={SquarePen} />新会话</button>
+        <button onClick={() => onNew(null)}><Icon icon={SquarePen} />新任务</button>
         <button onClick={onReport}><Icon icon={FileText} />生成报告</button>
         {meta?.has_funnel && <button onClick={onFunnel}><Icon icon={Filter} />漏斗分析</button>}
       </nav>
       <div className="history">
-        {!shown.length && <p className="empty">{query ? '没有匹配的会话' : '还没有会话'}</p>}
-        {groupConversations(shown).map(([title, items]) => (
-          <section key={title}>
-            <button className="group-head" onClick={() => setClosed({ ...closed, [title]: !closed[title] })}>
-              {title}<Icon icon={closed[title] ? ChevronRight : ChevronDown} size={12} />
-            </button>
-            {!closed[title] && items.map((c) => (
-              <ConversationRow key={c.id} item={c} active={c.id === activeId} onOpen={onOpen} onChanged={onRefresh} onDeleted={onDeleted} />
-            ))}
-          </section>
-        ))}
+        <div className="section-head">
+          <span>项目</span>
+          <button className="icon-btn tiny" aria-label="新建项目" onClick={() => setAdding(true)}><Icon icon={FolderPlus} size={14} /></button>
+        </div>
+        {adding && (
+          <div className="project-head editing">
+            <InlineEdit value="" label="项目名称" onCancel={() => setAdding(false)}
+              onSave={async (name) => { setAdding(false); if (name.trim()) { await api('/api/projects', json('POST', { name })); onRefresh(); } }} />
+          </div>
+        )}
+        {!projects.length && !adding && <button className="project-empty" onClick={() => setAdding(true)}>新建项目，把相关任务放在一起</button>}
+        {projects.map((p) => {
+          const tasks = shown.filter((c) => c.project === p.id);
+          if (query && !tasks.length) return null;
+          return (
+            <ProjectGroup key={p.id} project={p} tasks={tasks} open={!closed[p.id] || !!query} active={activeProject === p.id && !activeId}
+              onToggle={() => setClosed({ ...closed, [p.id]: !closed[p.id] })} onNewTask={() => onNew(p.id)} onChanged={onRefresh} renderTask={renderTask} />
+          );
+        })}
+        <div className="section-head loose"><span>任务</span></div>
+        {!loose.length && <p className="empty">{query ? '没有匹配的任务' : '还没有任务'}</p>}
+        {loose.map(renderTask)}
       </div>
       {meta && <p className="side-foot">{meta.name}<br />销售数据更新至 {meta.latest}</p>}
     </aside>
@@ -234,7 +315,7 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
   const status = s.thinking ? '正在思考' : pending ? '正在取数' : '正在整理结论';
   return (
     <div className="msg-bot">
-      <div className="bot-orb" aria-hidden="true">{live ? <FluidAgentOrb preset="tide" state={s.thinking ? 'thinking' : 'searching'} style={{ width: 26, height: 26 }} animateEntrance={false} /> : <span className="dot-static" />}</div>
+      <div className="bot-orb" aria-hidden="true">{live ? <FluidAgentOrb preset="monochrome" state={s.thinking ? 'thinking' : 'searching'} style={{ width: 24, height: 24 }} animateEntrance={false} /> : <Logo size={22} />}</div>
       <div className="bot-body">
         {s.matched && <div className="step-note">从问答库匹配到相似问题：{s.matched}</div>}
         {s.thought && <Collapsible title="思考完成"><div className="thought">{s.thought}</div></Collapsible>}
@@ -282,7 +363,7 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
 }
 
 // ---------- 输入框 ----------
-function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big }) {
+function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big, project, onClearProject }) {
   const [text, setText] = useState('');
   const box = useRef(null);
   const resize = () => { const t = box.current; if (t) { t.style.height = 'auto'; t.style.height = `${Math.min(t.scrollHeight, 140)}px`; } };
@@ -291,6 +372,11 @@ function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big 
   return (
     <div className={`composer${big ? ' big' : ''}`}>
       <div className="tray">
+        {project && (
+          <button className="tray-project" onClick={onClearProject} disabled={!onClearProject} title={onClearProject ? '不放进这个项目' : project.name}>
+            <Icon icon={Folder} size={13} />{project.name}{onClearProject && <Icon icon={X} size={11} />}
+          </button>
+        )}
         <span className="tray-item">{meta?.name || '连接数仓中'}</span>
         {meta?.synthetic && <span className="badge">模拟数据</span>}
         {meta?.model && <span className="tray-item model">{meta.model}</span>}
@@ -300,9 +386,7 @@ function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big 
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!busy) send(); } }} />
         <div className="box-row">
           <button className="switch" role="switch" aria-checked={assist} title="开启后先拆解问题再取数，适合模糊问题" onClick={() => onAssist(!assist)}><i />辅助思考</button>
-          <ChromaticButton className="report-btn" type="button" entrance="none" onClick={onReport} aria-label="生成报告">
-            <Icon icon={FileText} size={14} /><span>生成报告</span>
-          </ChromaticButton>
+          <button className="chip" type="button" onClick={onReport}><Icon icon={FileText} size={14} />生成报告</button>
           <button className="send" aria-label={busy ? '停止' : '发送'} disabled={!busy && !text.trim()} onClick={busy ? onStop : send}><Icon icon={busy ? Square : ArrowUp} color="#fff" /></button>
         </div>
       </div>
@@ -349,7 +433,7 @@ function Panel({ panel, onClose, onAsk }) {
       </header>
       {panel.loading ? (
         <div className="panel-loading">
-          <FluidAgentOrb preset="tide" state="searching" animateEntrance={false} style={{ width: 84, height: 84 }} />
+          <FluidAgentOrb preset="monochrome" state="searching" animateEntrance={false} style={{ width: 72, height: 72 }} />
           <p>正在从数仓取数并生成报告…</p>
         </div>
       ) : <iframe ref={frame} src={url} title={panel.title} sandbox="allow-same-origin allow-forms" onLoad={onLoad} />}
@@ -365,7 +449,7 @@ function Panel({ panel, onClose, onAsk }) {
 }
 
 function ReportDialog({ meta, onClose, onCreate }) {
-  const [form, setForm] = useState({ store: meta.stores[0]?.id || '', category: meta.categories[0] || '', week: meta.week, channel: meta.default_channel, focus: meta.default_focus });
+  const [form, setForm] = useState({ store: meta.stores[0]?.id || '', category: meta.default_category || meta.categories[0] || '', week: meta.week, channel: meta.default_channel, focus: meta.default_focus });
   const [error, setError] = useState('');
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const L = meta.labels;
@@ -398,6 +482,10 @@ export default function App() {
   const [meta, setMeta] = useState(null);
   const [bootError, setBootError] = useState('');
   const [conversations, setConversations] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState(null);
+  const projectRef = useRef(null);
+  projectRef.current = projectId;
   const [cid, setCid] = useState(null);
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -411,7 +499,10 @@ export default function App() {
   const cidRef = useRef(null);
   cidRef.current = cid;
 
-  const refresh = useCallback(() => api('/api/conversations').then(setConversations).catch(() => {}), []);
+  const refresh = useCallback(() => Promise.all([
+    api('/api/conversations').then(setConversations),
+    api('/api/projects').then(setProjects),
+  ]).catch(() => {}), []);
   useEffect(() => {
     if (meta?.branding?.name) document.title = `${meta.branding.name} ${meta.branding.product || ''}`.trim();
     if (meta?.branding?.accent) document.documentElement.style.setProperty('--accent', meta.branding.accent);
@@ -447,7 +538,7 @@ export default function App() {
       return copy;
     });
     try {
-      const r = await fetch('/api/chat', { ...json('POST', { message: question, conversation: cidRef.current, assist }), signal: ctrl.signal });
+      const r = await fetch('/api/chat', { ...json('POST', { message: question, conversation: cidRef.current, project: projectRef.current, assist }), signal: ctrl.signal });
       if (!r.ok || !r.body) {
         let detail = `请求失败（${r.status}）`;
         try { detail = (await r.json()).detail || detail; } catch { /* 非 JSON */ }
@@ -488,11 +579,12 @@ export default function App() {
     refresh();
   }, [assist, openReport, refresh]);
 
-  const newChat = () => { if (busy) return; setCid(null); setMessages([]); setPanel(null); refresh(); };
+  const newChat = (project = null) => { if (busy) return; setCid(null); setProjectId(project); setMessages([]); setPanel(null); refresh(); };
   const openConversation = async (id) => {
     if (busy) return;
     const data = await api(`/api/conversations/${id}`);
     setCid(id);
+    setProjectId(data.project || null);
     setMessages(data.messages.map((m) => (m.role === 'user' ? { role: 'user', content: m.content } : { role: 'assistant', events: m.blocks, live: false })));
     const report = [...data.messages].reverse().flatMap((m) => [...(m.blocks || [])].reverse()).find((b) => b.kind === 'report');
     if (report) openReport(report.report); else setPanel(null);
@@ -503,7 +595,10 @@ export default function App() {
     setPanel({ title: '正在生成报告', loading: true });
     if (window.innerWidth < 1300) setSideOpen(false);
     try {
-      openReport(await api('/api/reports', json('POST', form)));
+      const report = await api('/api/reports', json('POST', { ...form, project: projectId }));
+      openReport(report);
+      await refresh();
+      if (!busy && report.conversation) await openConversation(report.conversation);
     } catch (err) {
       setDialog(true);
       setPanel(null);
@@ -518,28 +613,30 @@ export default function App() {
   }, [meta, page]);
 
   const empty = messages.length === 0;
+  const currentProject = projects.find((p) => p.id === projectId) || null;
   const composer = (
-    <Composer meta={meta} busy={busy} assist={assist} onAssist={setAssist} onSend={ask} onStop={() => controller.current?.abort()} onReport={() => setDialog(true)} big={empty} />
+    <Composer meta={meta} busy={busy} assist={assist} onAssist={setAssist} onSend={ask} onStop={() => controller.current?.abort()} onReport={() => setDialog(true)} big={empty}
+      project={currentProject} onClearProject={cid ? null : () => setProjectId(null)} />
   );
   return (
     <div className="app">
       {sideOpen && (
-        <Sidebar meta={meta} conversations={conversations} activeId={cid} onNew={newChat} onOpen={openConversation} onRefresh={refresh}
-          onDeleted={(id) => { if (id === cid) newChat(); else refresh(); }} onReport={() => setDialog(true)} onFunnel={() => openFunnel()} onCollapse={() => setSideOpen(false)} />
+        <Sidebar meta={meta} conversations={conversations} projects={projects} activeId={cid} activeProject={projectId} onNew={newChat} onOpen={openConversation} onRefresh={refresh}
+          onDeleted={(id) => { if (id === cid) newChat(projectId); else refresh(); }} onReport={() => setDialog(true)} onFunnel={() => openFunnel()} onCollapse={() => setSideOpen(false)} />
       )}
       <main className="center">
         <div className="center-top">
-          {!sideOpen && <button className="icon-btn" aria-label="展开会话栏" onClick={() => setSideOpen(true)}><Icon icon={Menu} /></button>}
-          {!sideOpen && <b>{meta?.branding?.name || 'ReportAgent'}</b>}
+          {!sideOpen && <button className="icon-btn" aria-label="展开左栏" onClick={() => setSideOpen(true)}><Icon icon={Menu} /></button>}
+          {!sideOpen && <><Logo /><b>{meta?.branding?.name || 'ReportAgent'}</b></>}
           <span className="spacer" />
-          {!empty && <button className="icon-btn" aria-label="新会话" onClick={newChat} disabled={busy}><Icon icon={Plus} /></button>}
+          {!empty && <button className="icon-btn" aria-label="新任务" onClick={() => newChat(projectId)} disabled={busy}><Icon icon={Plus} /></button>}
           {!panel && meta?.has_funnel && <button className="icon-btn" aria-label="打开漏斗面板" onClick={() => openFunnel()}><Icon icon={PanelRight} /></button>}
         </div>
         {empty ? (
           <div className="home">
             <div className="hero">
-              <FluidAgentOrb preset="tide" state="idle" style={{ width: 72, height: 72 }} />
-              <h1>今天想看点什么？</h1>
+              <Logo size={44} />
+              <h1>{currentProject ? `在“${currentProject.name}”里看点什么？` : '今天想看点什么？'}</h1>
             </div>
             {bootError && <p className="err" role="alert">{bootError}</p>}
             <div className="home-body">

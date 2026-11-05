@@ -132,14 +132,39 @@ def test_server_endpoints_isolate_visitors(demo_app, week):
     assert client.get("/reports/not-a-report").status_code == 404
     chat = client.post("/api/chat", json={"message": "你好"})
     assert "error" in chat.text
-    convs = client.get("/api/conversations").json()
+    convs = [c for c in client.get("/api/conversations").json() if c["id"] != made["conversation"]]
     assert len(convs) == 1
     assert other.get("/api/conversations").json() == []                 # 其他访客看不到
     assert other.get(f"/api/conversations/{convs[0]['id']}").status_code == 404
     other.delete(f"/api/conversations/{convs[0]['id']}")
-    assert len(client.get("/api/conversations").json()) == 1            # 也删不掉
+    assert len(client.get("/api/conversations").json()) == 2            # 也删不掉
     assert client.delete(f"/api/conversations/{convs[0]['id']}").status_code == 200
-    assert client.get("/api/conversations").json() == []
+    assert [c["id"] for c in client.get("/api/conversations").json()] == [made["conversation"]]
+
+
+def test_projects_group_tasks_and_are_owner_scoped(demo_app, week):
+    from fastapi.testclient import TestClient
+
+    from reportagent.server import create_app
+    api = create_app(demo_app)
+    client, other = TestClient(api), TestClient(api)
+    project = client.post("/api/projects", json={"name": "华东复盘"}).json()
+    made = client.post("/api/reports", json={"store": "S01", "category": "SKINCARE", "week": week, "project": project["id"]}).json()
+    task = next(c for c in client.get("/api/conversations").json() if c["id"] == made["conversation"])
+    assert task["project"] == project["id"]
+    blocks = client.get(f"/api/conversations/{task['id']}").json()["messages"][1]["blocks"]
+    assert any(b.get("kind") == "report" for b in blocks)              # 可以回放并打开报告
+    assert other.get("/api/projects").json() == []
+    other.delete(f"/api/projects/{project['id']}")
+    assert len(client.get("/api/projects").json()) == 1                # 其他访客删不掉
+    other_task = other.post("/api/reports", json={"store": "S01", "category": "SKINCARE", "week": week, "project": project["id"]}).json()
+    assert next(c for c in other.get("/api/conversations").json() if c["id"] == other_task["conversation"])["project"] is None
+    client.patch(f"/api/conversations/{task['id']}", json={"project": None, "move": True})
+    assert next(c for c in client.get("/api/conversations").json() if c["id"] == task["id"])["project"] is None
+    client.patch(f"/api/conversations/{task['id']}", json={"project": project["id"], "move": True})
+    client.delete(f"/api/projects/{project['id']}")
+    assert client.get("/api/projects").json() == []
+    assert next(c for c in client.get("/api/conversations").json() if c["id"] == task["id"])["project"] is None  # 任务保留
 
 
 def test_rate_limit():

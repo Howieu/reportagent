@@ -8,6 +8,7 @@ calendar:
   ly_shift_days: 364
 defaults:
   channel: 跨州
+  category: 美妆个护
   focus: sales
 branding:
   name: ReportAgent

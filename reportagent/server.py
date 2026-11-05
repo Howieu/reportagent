@@ -42,6 +42,7 @@ class RateLimiter:
 class ChatIn(BaseModel):
     message: str
     conversation: str | None = None
+    project: str | None = None
     assist: bool = False
 
 
@@ -51,10 +52,17 @@ class ReportIn(BaseModel):
     week: str | None = None
     channel: str | None = None
     focus: str | None = None
+    project: str | None = None
 
 
 class TitleIn(BaseModel):
-    title: str
+    title: str | None = None
+    project: str | None = None
+    move: bool = False
+
+
+class ProjectIn(BaseModel):
+    name: str
 
 
 def client_ip(request):
@@ -118,7 +126,7 @@ def create_app(core: App | None = None) -> FastAPI:
             "model": core.llm.model if core.llm and core.llm.enabled else None,
             "stores": [{"id": r["store"], "name": r["name"]} for _, r in stores.iterrows()],
             "categories": agent.tools.values("category"), "channels": agent.tools.values("channel"),
-            "default_channel": core.semantic.default_channel, "default_focus": core.semantic.default_focus,
+            "default_channel": core.semantic.default_channel, "default_focus": core.semantic.default_focus, "default_category": core.semantic.default_category,
             "week": week, "latest": latest, "examples": random.sample(list(core.semantic.examples), len(core.semantic.examples)), "data_note": core.semantic.data_note, "has_funnel": core.semantic.has("funnel"),
         }
 
@@ -135,7 +143,31 @@ def create_app(core: App | None = None) -> FastAPI:
 
     @api.patch("/api/conversations/{cid}")
     def rename(cid: str, body: TitleIn, request: Request):
-        store.rename(cid, body.title.strip() or "新会话", request.state.uid)
+        if body.title is not None:
+            store.rename(cid, body.title.strip() or "新任务", request.state.uid)
+        if body.move:
+            store.move(cid, body.project, request.state.uid)
+        return {"ok": True}
+
+    @api.get("/api/projects")
+    def projects(request: Request):
+        return store.projects(request.state.uid)
+
+    @api.post("/api/projects")
+    def create_project(body: ProjectIn, request: Request):
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, "项目名称不能为空")
+        return store.create_project(name, request.state.uid)
+
+    @api.patch("/api/projects/{pid}")
+    def rename_project(pid: str, body: ProjectIn, request: Request):
+        store.rename_project(pid, body.name.strip() or "未命名项目", request.state.uid)
+        return {"ok": True}
+
+    @api.delete("/api/projects/{pid}")
+    def delete_project(pid: str, request: Request):
+        store.delete_project(pid, request.state.uid)
         return {"ok": True}
 
     @api.delete("/api/conversations/{cid}")
@@ -151,7 +183,7 @@ def create_app(core: App | None = None) -> FastAPI:
         uid = request.state.uid
         if not chat_limit.allow(uid) or not chat_limit.allow(client_ip(request)):
             raise HTTPException(429, "提问太频繁，请稍后再试")
-        cid = body.conversation if body.conversation and store.conversation(body.conversation, uid) else store.create(question, uid)
+        cid = body.conversation if body.conversation and store.conversation(body.conversation, uid) else store.create(question, uid, body.project)
         history = store.conversation(cid, uid)["messages"]
         store.add(cid, "user", question)
 
@@ -181,10 +213,16 @@ def create_app(core: App | None = None) -> FastAPI:
         if not report_limit.allow(request.state.uid) or not report_limit.allow(client_ip(request)):
             raise HTTPException(429, "生成报告太频繁，请稍后再试")
         try:
-            meta_, _, _ = core.report(body.store, body.category, body.week or None, body.channel or None, body.focus or None)
+            meta_, _, sections = core.report(body.store, body.category, body.week or None, body.channel or None, body.focus or None)
         except (DataUnavailable, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
-        return meta_
+        # 直接生成的报告也是一个任务，才能归到项目里、之后接着追问
+        cid = store.create(meta_["title"], request.state.uid, body.project)
+        store.add(cid, "user", f"生成报告：{meta_['title']}")
+        summary = sections["summary"]["text"]
+        store.add(cid, "assistant", summary, [{"type": "answer", "text": summary, "mode": "model", "suggestions": []},
+                                              {"type": "result", "kind": "report", "report": meta_, "assumptions": []}])
+        return {**meta_, "conversation": cid}
 
     def _funnel(request: Request):
         params = dict(request.query_params)

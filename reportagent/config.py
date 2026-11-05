@@ -63,6 +63,7 @@ class Semantic:
     date_format: str | None = None
     default_channel: str = ""
     default_focus: str = "sales"
+    default_category: str = ""
     glossary: tuple = ()
     constraints: tuple = ()
     banned_phrases: tuple = ()
@@ -127,6 +128,7 @@ def load_semantic(path) -> Semantic:
         date_format=cal.get("date_format"),
         default_channel=str(defaults.get("channel", "")),
         default_focus=focus,
+        default_category=str(defaults.get("category", "")),
         glossary=tuple(raw.get("glossary") or ()),
         constraints=tuple(raw.get("constraints") or ()),
         banned_phrases=tuple(raw.get("banned_phrases") or ()),

@@ -38,6 +38,11 @@ class State:
             serial = "BIGSERIAL PRIMARY KEY" if p else "INTEGER PRIMARY KEY AUTOINCREMENT"
             db.execute(text(f"CREATE TABLE IF NOT EXISTS {p}messages (id {serial}, conversation TEXT, role TEXT, content TEXT, blocks TEXT, created DOUBLE PRECISION)"))
             db.execute(text(f"CREATE TABLE IF NOT EXISTS {p}reports (id TEXT PRIMARY KEY, html TEXT, meta TEXT, created DOUBLE PRECISION)"))
+            db.execute(text(f"CREATE TABLE IF NOT EXISTS {p}projects (id TEXT PRIMARY KEY, owner TEXT, name TEXT, created DOUBLE PRECISION)"))
+            if p:
+                db.execute(text("ALTER TABLE app.conversations ADD COLUMN IF NOT EXISTS project TEXT"))
+            elif "project" not in [r[1] for r in db.execute(text("PRAGMA table_info(conversations)"))]:
+                db.execute(text("ALTER TABLE conversations ADD COLUMN project TEXT"))
 
     def _rows(self, sql, **params):
         with self.engine.connect() as db:
@@ -48,19 +53,47 @@ class State:
             db.execute(text(sql.replace("{p}", self.prefix)), params)
 
     def conversations(self, owner):
-        return self._rows("SELECT id, title, created, updated FROM {p}conversations WHERE owner=:o ORDER BY updated DESC", o=owner)
+        return self._rows("SELECT id, title, project, created, updated FROM {p}conversations WHERE owner=:o ORDER BY updated DESC", o=owner)
 
     def conversation(self, cid, owner):
-        head = self._rows("SELECT id, title, created, updated FROM {p}conversations WHERE id=:i AND owner=:o", i=cid, o=owner)
+        head = self._rows("SELECT id, title, project, created, updated FROM {p}conversations WHERE id=:i AND owner=:o", i=cid, o=owner)
         if not head:
             return None
         rows = self._rows("SELECT role, content, blocks FROM {p}messages WHERE conversation=:i ORDER BY id", i=cid)
         return {**head[0], "messages": [{"role": r["role"], "content": r["content"], "blocks": json.loads(r["blocks"] or "[]")} for r in rows]}
 
-    def create(self, title, owner):
+    def create(self, title, owner, project=None):
         cid, now = secrets.token_hex(8), time.time()
-        self._run("INSERT INTO {p}conversations VALUES (:i,:o,:t,:n,:n)", i=cid, o=owner, t=title[:60], n=now)
+        if project and not self._project_owned(project, owner):
+            project = None
+        self._run("INSERT INTO {p}conversations (id, owner, title, created, updated, project) VALUES (:i,:o,:t,:n,:n,:r)",
+                  i=cid, o=owner, t=title[:60], n=now, r=project)
         return cid
+
+    def _project_owned(self, project, owner):
+        return bool(self._rows("SELECT id FROM {p}projects WHERE id=:i AND owner=:o", i=project, o=owner))
+
+    def projects(self, owner):
+        return self._rows("SELECT id, name, created FROM {p}projects WHERE owner=:o ORDER BY created", o=owner)
+
+    def create_project(self, name, owner):
+        pid = secrets.token_hex(8)
+        self._run("INSERT INTO {p}projects VALUES (:i,:o,:n,:c)", i=pid, o=owner, n=name[:40], c=time.time())
+        return {"id": pid, "name": name[:40]}
+
+    def rename_project(self, pid, name, owner):
+        self._run("UPDATE {p}projects SET name=:n WHERE id=:i AND owner=:o", n=name[:40], i=pid, o=owner)
+
+    def delete_project(self, pid, owner):
+        """删除项目只解除归类，任务保留。"""
+        if self._project_owned(pid, owner):
+            self._run("UPDATE {p}conversations SET project=NULL WHERE project=:i AND owner=:o", i=pid, o=owner)
+            self._run("DELETE FROM {p}projects WHERE id=:i", i=pid)
+
+    def move(self, cid, project, owner):
+        if project and not self._project_owned(project, owner):
+            return
+        self._run("UPDATE {p}conversations SET project=:r WHERE id=:i AND owner=:o", r=project, i=cid, o=owner)
 
     def add(self, cid, role, content, blocks=()):
         now = time.time()
