@@ -192,10 +192,13 @@ def html_to_pdf(html_text, pdf_path):
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "report.html"
         src.write_text(html_text, encoding="utf-8")
-        subprocess.run(
-            [chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", f"--user-data-dir={tmp}/profile",
-             f"--print-to-pdf={pdf_path}", src.as_uri()],
-            check=True, capture_output=True, timeout=120)
+        args = [chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", f"--user-data-dir={tmp}/profile"]
+        if os.environ.get("CHROME_NO_SANDBOX") == "1":  # 容器里以 root 运行时 Chromium 只能关沙箱；页面有 CSP 且不含脚本
+            args += ["--no-sandbox", "--disable-dev-shm-usage"]
+        try:
+            subprocess.run([*args, f"--print-to-pdf={pdf_path}", src.as_uri()], check=True, capture_output=True, timeout=120)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("PDF 生成失败，请稍后重试。HTML 报告不受影响。") from exc
     return pdf_path
 
 

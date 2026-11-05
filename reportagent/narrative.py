@@ -69,6 +69,8 @@ class LLM:
 
     def __init__(self, client=None, model=None):
         self.model = model or os.environ.get("LLM_MODEL", "agent-model")
+        self.text_model = os.environ.get("LLM_TEXT_MODEL") or self.model
+        self.fallback = os.environ.get("LLM_FALLBACK_MODEL") or None
         self.client = client
         key = os.environ.get("LLM_API_KEY")
         if client is None and key:
@@ -80,13 +82,23 @@ class LLM:
     def enabled(self):
         return self.client is not None
 
-    def chat(self, messages, tools=None, temperature=0.2, max_tokens=900):
-        kwargs = {"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
-        if self.model.startswith("agent-model") and "flash-" not in self.model:
+    def chat(self, messages, tools=None, temperature=0.2, max_tokens=900, model=None):
+        model = model or self.model
+        kwargs = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        if model.startswith("agent-model") and "flash-" not in model:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}  # 关掉模型思考，降低延迟
         if tools:
             kwargs["tools"] = tools
-        return self.client.chat.completions.create(**kwargs).choices[0].message
+        try:
+            return self.client.chat.completions.create(**kwargs).choices[0].message
+        except Exception as exc:  # 只在配置了备用模型且确实被限流时切换
+            if self.fallback and model != self.fallback and type(exc).__name__ == "RateLimitError":
+                return self.chat(messages, tools, temperature, max_tokens, self.fallback)
+            raise
+
+    def write(self, messages):
+        """润色文字不需要调工具，用更稳定的模型，不和对话抢额度。"""
+        return self.chat(messages, model=self.text_model)
 
 
 def check_entities(text, entities):
@@ -266,7 +278,7 @@ def _write(key, r, semantic, llm):
         return {"text": fallback, "mode": "模板"}
     facts = facts_fn(r)
     try:
-        message = llm.chat([{"role": "system", "content": system_prompt(semantic)},
+        message = llm.write([{"role": "system", "content": system_prompt(semantic)},
                             {"role": "user", "content": (
                                 f"事实：\n{facts}\n\n初稿：\n{fallback}\n\n"
                                 f"请把初稿改得更自然。只改措辞，不得增加初稿没有的结论或对象。要求：{task}")}])
@@ -282,7 +294,7 @@ def _write(key, r, semantic, llm):
         problem = "不是 4 条"
     if problem:
         return {"text": fallback, "mode": "模板", "note": problem}
-    return {"text": text, "mode": llm.model}
+    return {"text": text, "mode": llm.text_model}
 
 
 def write_sections(report, semantic, llm=None):

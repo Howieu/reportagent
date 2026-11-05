@@ -29,13 +29,15 @@ def test_ranking_normalization():
 
 class FakeLLM:
     enabled = True
-    model = "fake"
+    model = text_model = "fake"
 
     def __init__(self, script):
         self.script = list(script)
 
     def chat(self, messages, tools=None, **_):
         return self.script.pop(0)
+
+    write = chat
 
 
 def call(name, args, id="c1"):
@@ -103,6 +105,29 @@ def test_goal_grain_is_rejected_not_wrong(demo_app):
     from reportagent.tools import ToolError
     with pytest.raises(ToolError, match="vs Goal"):
         ChatAgent(demo_app).tools.query_metrics({"metrics": ["sales_vs_goal"], "dimensions": ["family"]})
+
+
+def test_llm_falls_back_only_on_rate_limit(monkeypatch):
+    from reportagent.narrative import LLM
+
+    class RateLimitError(Exception):
+        pass
+
+    used = []
+
+    def create(**kwargs):
+        used.append(kwargs["model"])
+        if kwargs["model"] == "primary":
+            raise RateLimitError
+        return NS(choices=[NS(message=NS(content="ok"))])
+
+    monkeypatch.setenv("LLM_FALLBACK_MODEL", "backup")
+    client = NS(chat=NS(completions=NS(create=create)))
+    assert LLM(client=client, model="primary").chat([]).content == "ok" and used == ["primary", "backup"]
+    monkeypatch.delenv("LLM_FALLBACK_MODEL")
+    import pytest
+    with pytest.raises(RateLimitError):
+        LLM(client=client, model="primary").chat([])
 
 
 def test_no_llm_chat_explains(demo_app):
