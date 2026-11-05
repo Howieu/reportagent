@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from .narrative import FACTOR_NAMES, fi, money, num, signed
+from .narrative import FACTOR_NAMES, fi, money, num, signed, verdict_ly
 
 BOLD = re.compile(r"\*\*(.+?)\*\*")
 HERE = Path(__file__).parent
@@ -29,17 +29,17 @@ def rich(text):
 
 
 def delta(value, baseline=100):
-    """指数相对基准的状态：图标 + 文字，不只靠颜色。"""
+    """指数：低于基准用深红，其余黑色。数字本身就能看出高低，不依赖颜色。"""
     if value is None:
         return Markup('<span class="flat">—</span>')
-    cls, icon = ("up", "↗") if value > baseline + 0.5 else ("down", "↘") if value < baseline - 0.5 else ("flat", "→")
-    return Markup(f'<span class="{cls}">{icon} {round(value)}</span>')
+    cls = "down" if value < baseline - 0.5 else "flat"
+    return Markup(f'<span class="{cls}">{round(value)}</span>')
 
 
 def gap(value):
     if value is None:
         return Markup('<span class="flat">—</span>')
-    cls = "up" if value > 0.5 else "down" if value < -0.5 else "flat"
+    cls = "down" if value < -0.5 else "flat"
     return Markup(f'<span class="{cls}">{round(value):+d}</span>')
 
 
@@ -63,7 +63,7 @@ def spark(values, labels=None, width=156, height=42):
         f"<title>vs LY {round(v)}</title></circle>" for i, v in points)
     return Markup(f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" '
                   f'aria-label="近四周 vs LY 趋势"><path d="{path}" fill="none" stroke="var(--accent)" '
-                  f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>{dots}</svg>')
+                  f'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>{dots}</svg>')
 
 
 def contribution_bars(items):
@@ -81,7 +81,7 @@ def contribution_bars(items):
     return Markup("".join(rows))
 
 
-_env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape(["j2"]),
+_env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape(["html.j2"]),
                    trim_blocks=True, lstrip_blocks=True)
 _env.filters.update(fi=fi, signed=signed, money=money, num=num, rich=rich, delta=delta, gap=gap, spark=spark,
                     bars=contribution_bars)
@@ -91,7 +91,7 @@ def points(value):
     """百分点变化。"""
     if value is None:
         return Markup('<span class="flat">—</span>')
-    cls = "up" if value > 0.005 else "down" if value < -0.005 else "flat"
+    cls = "down" if value < -0.005 else "flat"
     return Markup(f'<span class="{cls}">{value:+.2f} pct</span>')
 
 
@@ -104,11 +104,72 @@ def render_funnel(result, base="/funnel"):
     return _env.get_template("funnel.html.j2").render(f=result, base=base, drill=drill, pts=points)
 
 
+def _note(item):
+    if item.get("potential"):
+        return f"潜力高：{item['reason']}"
+    parts = []
+    if item.get("core_vs_ly") is not None:
+        parts.append(f"排除新品后 vs LY {fi(item['core_vs_ly'])}")
+    if item.get("available") is not None:
+        parts.append(f"可售率 {fi(item['available'])}%")
+    if item.get("reason"):
+        parts.append(item["reason"])
+    return "；".join(parts)
+
+
+def _annotate(drill):
+    for direction in ("up", "down"):
+        for sub in drill[direction]:
+            sub["note_text"] = _note(sub)
+            for fam in sub["families"]:
+                fam["note_text"] = _note(fam)
+                for item in fam["items"]:
+                    item["note_text"] = _note(item)
+            for item in sub["others"]:
+                item["note_text"] = _note(item)
+
+
+def _titles(r):
+    """标题写结论：只读标题也能看懂整份报告。"""
+    labels, week = r["labels"], r["overall"]["week"]
+    channels = [c for c in r["channels"] if c["sales_vs_ly"] is not None]
+    top_channel = max(channels, key=lambda c: c["sales_vs_ly"]) if channels else None
+    driver_key = r["tree"]["driver"]
+    driver = next((c for c in r["tree"]["contributions"] if c["factor"] == driver_key), None)
+    sales = week["sales_vs_ly"] or 100
+    subs = r["drill"]["up"] if sales >= 100 else r["drill"]["down"]
+    word = "上升" if sales >= 100 else "下降"
+    regions = [x for x in r["regions"] if x["level"] == "region" and x["sales_vs_ly"] is not None]
+    best = max(regions, key=lambda x: x["sales_vs_ly"]) if regions else None
+    worst = min(regions, key=lambda x: x["sales_vs_ly"]) if regions else None
+    drill = (f"{word}主要来自{labels['subcategory']} {subs[0]['name']}（贡献 {fi(subs[0]['contribution'])}%）" if subs
+             else f"排除新品后没有{labels['subcategory']}朝{word}方向变化，变化主要来自新品")
+    return {
+        "overall": f"整体表现：Sales {verdict_ly(week['sales_vs_ly'])}（vs LY {fi(week['sales_vs_ly'])}），排名第 {week['rank']}",
+        "channel": (f"分{labels['channel']}：{top_channel['channel']}同比最高（vs LY {fi(top_channel['sales_vs_ly'])}）" if top_channel else f"分{labels['channel']}表现"),
+        "tree": (f"驱动拆解：{FACTOR_NAMES.get(driver_key, driver_key)} 是 Sales 变化的最大因素（贡献 {driver['share']:.0f}%）" if driver else "驱动拆解"),
+        "drill": f"商品归因：{drill}",
+        "region": (f"区域对比：{best['name']}同比最高（{fi(best['sales_vs_ly'])}），{worst['name']}最低（{fi(worst['sales_vs_ly'])}）" if best and best is not worst else "区域对比"),
+    }
+
+
+def _follow_ups(r):
+    out = []
+    for direction, word in (("down", "下降"), ("up", "上升")):
+        for sub in r["drill"][direction]:
+            items = [i for f in sub["families"] for i in f["items"]] + sub["others"]
+            for item in items:
+                if item["potential"]:
+                    out.append(f"{item['name']}（{sub['name']}，{word}方向，vs LY {fi(item['vs_ly'])}）：{item['reason']}。")
+    return out[:8]
+
+
 def render_html(report, sections, queries=()):
     node_labels = {"sales": "Sales", "tickets": "Trans", "ab": "AB", "traffic": "Traffic", "cr": "CR",
                    "ai": "AI", "price": "Price/item", "qty": "Qty"}
+    _annotate(report["drill"])
     return _env.get_template("report.html.j2").render(
-        r=report, s=sections, queries=list(queries), node_labels=node_labels,
+        r=report, s=sections, queries=list(queries), node_labels=node_labels, titles=_titles(report), follow_ups=_follow_ups(report),
         factor_names=FACTOR_NAMES, generated=datetime.now().strftime("%Y-%m-%d %H:%M"))
 
 

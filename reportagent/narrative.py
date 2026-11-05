@@ -286,6 +286,6 @@ def _write(key, r, semantic, llm):
 
 
 def write_sections(report, semantic, llm=None):
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:  # 免费模型并发高了会限流
         futures = {k: pool.submit(_write, k, report, semantic, llm) for k in SECTIONS}
     return {k: f.result() for k, f in futures.items()}

@@ -3,6 +3,7 @@
 name: Olist × RetailRocket 真实公开数据
 data_note: 订单数据来自 Olist 巴西电商公开数据集（CC BY-NC-SA 4.0，2017-01 至 2018-08），金额单位为巴西雷亚尔。门店对应卖家所在州，品牌对应卖家。
 currency: "R$"
+report_source: Olist 巴西电商公开数据
 calendar:
   fiscal_year_start_month: 1
   ly_shift_days: 364

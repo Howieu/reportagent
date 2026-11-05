@@ -1,7 +1,7 @@
 {
   "outputDirectory": "reportagent/static",
-  "buildCommand": "cd web && npm ci && npm run build",
-  "framework": null,
+  "buildCommand": "cd web && npm run build",
+  "framework": "vite",
   "rewrites": [
     {
       "source": "/api/:path*",
@@ -20,5 +20,5 @@
       "destination": "https://reportagent-api.onrender.com/funnel/:path*"
     }
   ],
-  "installCommand": "true"
+  "installCommand": "cd web && npm ci"
 }

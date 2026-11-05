@@ -73,6 +73,7 @@ class Semantic:
     synthetic: bool = False
     currency: str = "¥"
     data_note: str = ""
+    report_source: str = ""
     examples: tuple = ()
 
     def has(self, source):
@@ -137,6 +138,7 @@ def load_semantic(path) -> Semantic:
         synthetic=bool(raw.get("synthetic", False)),
         currency=str(raw.get("currency", "¥")),
         data_note=str(raw.get("data_note", "")),
+        report_source=str(raw.get("report_source", "")),
         examples=tuple(raw.get("examples") or ()),
         synonyms={str(k): str(v) for k, v in (raw.get("synonyms") or {}).items()},
     )

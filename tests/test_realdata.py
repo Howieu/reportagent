@@ -61,7 +61,7 @@ def test_funnel_drilldown_narrows(app):
     child = analyze_funnel(app.wh, "201535", "category_l2", {"category_l1": name})
     assert child["total"]["steps"][0]["uv"] == top["rows"][0]["steps"][0]["uv"]
     assert child["filters"] == {"category_l1": name} and child["next_dimension"] == "category_id"
-    assert "category_l2=" not in render_funnel(child).split("Select Dimension")[0]
+    assert "当前范围" in render_funnel(child)
 
 
 def test_incomplete_funnel_week_and_bad_dimension(app):

@@ -434,7 +434,7 @@ def analyze(wh: Warehouse, store, category, week, channel=None, focus=None) -> d
     tree = _tree(by_channel, traffic, store, peers, channel)
     row = stores_df[stores_df["store"] == store].iloc[0]
     return {
-        "source": sem.name, "data_note": sem.data_note, "synthetic": sem.synthetic, "branding": sem.branding, "store": store, "store_name": row["name"], "category": category, "week": str(week),
+        "source": sem.report_source or sem.name, "data_note": sem.data_note, "synthetic": sem.synthetic, "branding": sem.branding, "store": store, "store_name": row["name"], "category": category, "week": str(week),
         "channel": channel, "focus": focus, "labels": sem.labels, "latest_date": str(latest),
         "period": {k: {"start": str(periods[k].start), "end": str(periods[k].end)} for k in ("week", "week_ly", "r4", "ytd")},
         "peers": len(peers), "overall": overall, "mix": mix,

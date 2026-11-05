@@ -20,3 +20,4 @@ reports/
 !.env.example
 reportagent/static/
 web/node_modules/
+.vercel
