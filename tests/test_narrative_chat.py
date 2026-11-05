@@ -114,7 +114,7 @@ def test_report_renders_with_synthetic_label_and_escapes(demo_app, week):
     r = analyze(demo_app.wh, "S01", "SKINCARE", week)
     r["store_name"] = "<script>alert(1)</script>"
     html = render_html(r, write_sections(r, demo_app.semantic, None))
-    assert "合成数据" in html and "<script>alert" not in html and "业绩总结" in html
+    assert "合成数据" in html and "<script>alert" not in html and "摘要" in html
 
 
 def test_server_endpoints_isolate_visitors(demo_app, week):
