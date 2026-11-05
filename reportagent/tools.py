@@ -449,7 +449,7 @@ class Tools:
         lines = [f"{s['name']} UV {num(s['uv'])}" + (f"，上一步转化 {s['conv']:.2f}%" if s["conv"] is not None else "") for s in total["steps"]]
         lines.append(f"整体转化 {total['overall']:.2f}%，上周 {total['overall_prev']:.2f}%")
         lines.append(f"转化最低的一步是 {f['biggest_drop']['name']}")
-        lines += [f"{r['name']}：UV 占比 {r['share']:.1f}%，整体转化 {r['overall']:.2f}%" for r in f["opportunity"]]
+        lines += [f"需要关注（流量大但转化低于整体）：{r['name']}，UV 占比 {r['share']:.1f}%，整体转化 {r['overall']:.2f}%" for r in f["opportunity"]]
         query = urlencode({"week": f["week"], "dimension": f["dimension"], **f["filters"]})
         fallback = (f"第 {f['week']} 周{names[0]}到{names[-1]}的整体转化是 {total['overall']:.2f}%（上周 {total['overall_prev']:.2f}%），"
                     f"转化最低的一步是{f['biggest_drop']['name']}。")

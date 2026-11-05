@@ -53,13 +53,18 @@ REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb REPORTAGENT_SEMANTIC=semantic.demo
 
 ## 部署
 
-前端在 Vercel，后端在 Render（`Dockerfile`），数据、会话和报告在 Supabase。数仓表放在 `warehouse` schema，应用状态放在 `app` schema，都不经过 Supabase 对外的 API。
+线上地址：https://reportagent.vercel.app
+
+前端在 Vercel（`vercel.json` 把接口转发到 Render），后端在 Render（`Dockerfile`），数据、会话和报告在 Supabase。数仓表放在 `warehouse` schema，应用状态放在 `app` schema，都不经过 Supabase 对外的 API。
 
 | 环境变量 | 说明 |
 |---|---|
 | `REPORTAGENT_DB_URL` | 只读账号的数仓连接 |
 | `REPORTAGENT_APP_DB_URL` | 应用状态库连接 |
 | `LLM_API_KEY` | 模型密钥 |
+| `LLM_MODEL` | 对话模型，必须支持工具调用，默认 `agent-model` |
+| `LLM_TEXT_MODEL` | 报告文字模型 |
+| `LLM_FALLBACK_MODEL` | 被限流时切换的模型 |
 | `REPORTAGENT_COOKIE_SECURE` | 线上设为 `1` |
 | `REPORTAGENT_CHAT_PER_HOUR` | 每个访客每小时提问上限，默认 30 |
 
@@ -70,6 +75,8 @@ REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb REPORTAGENT_SEMANTIC=semantic.demo
 
 ## 已知限制
 
-- 没有账号体系，靠随机 cookie 隔离访客。
+- 没有账号体系，靠随机 cookie 隔离访客，清除 cookie 后看不到原来的项目和任务。
+- Render 免费实例闲置后会休眠，首次打开需要等待约一分钟；Supabase 免费项目长期闲置可能被暂停。
+- 数字校验能拦截错误数字和部分方向错误，拦不住所有语义错误，结论仍需对照表格。
 - 漏斗是同周期各步 UV 之比，不是同一用户的顺序路径。
 - 财年周历只支持 ISO 周。
