@@ -4,6 +4,9 @@ ponytail: 这是“同周期各步骤 UV 之比”，不是同一用户按顺序
 严格路径需要窗口函数，等有真实需求且数据规模允许时再加。
 """
 
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from .analysis import ratio
@@ -33,11 +36,12 @@ def _pct(a, b):
 
 
 def _step_frames(wh, steps, dims, periods, filters):
-    frames = []
-    for step in steps:
+    def one(step):
         f = {**filters, "event": step["value"]}
-        frames.append(wh.aggregate("funnel", dims, {"uv": ("distinct", "user")}, periods, f, f"漏斗：{step['name']}"))
-    return frames
+        return wh.aggregate("funnel", dims, {"uv": ("distinct", "user")}, periods, f, f"漏斗：{step['name']}")
+
+    with ThreadPoolExecutor(max_workers=len(steps)) as pool:  # 每步一条查询，并行能明显缩短等待
+        return list(pool.map(one, steps))
 
 
 def _row(values, steps):
@@ -59,7 +63,24 @@ def _row(values, steps):
     return out
 
 
+CACHE_SECONDS = 600
+_cache = {}
+
+
 def analyze_funnel(wh, week=None, dimension=None, filters=None):
+    """同样的查询 10 分钟内直接复用。ponytail: 进程内缓存；多实例时换 Redis。"""
+    key = json.dumps([id(wh), week, dimension, filters], sort_keys=True, ensure_ascii=False)
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    result = _compute_funnel(wh, week, dimension, filters)
+    if len(_cache) > 200:
+        _cache.clear()
+    _cache[key] = (time.time(), result)
+    return result
+
+
+def _compute_funnel(wh, week=None, dimension=None, filters=None):
     sem = wh.semantic
     if not sem.has("funnel"):
         raise DataUnavailable("当前数仓没有配置漏斗数据。")

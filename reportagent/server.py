@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat import ChatAgent
@@ -95,7 +96,13 @@ def create_app(core: App | None = None) -> FastAPI:
 
     @api.get("/")
     def index():
-        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+        page = STATIC / "index.html"
+        if not page.exists():
+            raise HTTPException(404, "前端没有构建。线上前端在 Vercel；本地请运行 cd web && npm run build")
+        return FileResponse(page, headers={"Cache-Control": "no-cache"})
+
+    if (STATIC / "assets").exists():
+        api.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")
 
     @api.get("/api/meta")
     def meta():

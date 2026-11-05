@@ -5,6 +5,7 @@ pa_for_human / family_for_human / article_for_human / potential_recognition。
 """
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
@@ -397,31 +398,32 @@ def analyze(wh: Warehouse, store, category, week, channel=None, focus=None) -> d
     others = [s for s in peers if s != store]
 
     main = {k: periods[k] for k in ("week", "week_ly", "r4", "r4_ly", "ytd", "ytd_ly")}
-    total = wh.sales(["store"], main, {"store": all_stores, "category": category}, "门店 × 品类汇总")
+    week_pair = {k: periods[k] for k in ("week", "week_ly")}
+    scope = {"store": all_stores, "category": category}
+    traffic_filters = {"store": all_stores}
+    if sem.has("traffic") and sem.source("traffic").has("category"):
+        traffic_filters["category"] = category
+    has_subs = sem.source("sales").has("subchannel")
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        total_f = pool.submit(wh.sales, ["store"], main, scope, "门店 × 品类汇总")
+        whole_f = pool.submit(wh.sales, ["store"], main, {"store": all_stores}, "门店全品类汇总", False)
+        channel_f = pool.submit(wh.sales, ["store", "channel"], periods, scope, "渠道与销售树")
+        goals_f = pool.submit(wh.aggregate, "goals", ["store", "channel"], {"goal": ("sum", "sales_goal")}, main, scope, "目标") if sem.has("goals") else None
+        traffic_f = pool.submit(wh.aggregate, "traffic", ["store", "channel"], {"visitors": ("sum", "visitors")}, periods, traffic_filters, "客流") if sem.has("traffic") else None
+        subs_f = pool.submit(wh.sales, ["channel", "subchannel"], week_pair, {"store": store, "category": category}, "二级渠道", False) if has_subs else None
+        cats_f = pool.submit(wh.sales, ["category"], week_pair, {"store": store}, "门店品类结构", False)
+    total = total_f.result()
     if total[total["store"] == store]["sales__week"].sum() <= 0:
         raise DataUnavailable(f"门店 {store} 的 {category} 在 {week} 没有销售数据，请检查门店、品类和周次。")
-    whole = wh.sales(["store"], main, {"store": all_stores}, "门店全品类汇总", tickets=False)
-    by_channel = wh.sales(["store", "channel"], periods, {"store": all_stores, "category": category}, "渠道与销售树")
+    whole, by_channel = whole_f.result(), channel_f.result()
     channels_available = sorted(by_channel[by_channel["store"] == store]["channel"].unique())
     channel = channel or sem.default_channel or channels_available[0]
     if channel not in channels_available:
         raise DataUnavailable(f"渠道 {channel} 不存在，可选：{', '.join(channels_available)}")
-
-    goals = None
-    if sem.has("goals"):
-        goals = wh.aggregate("goals", ["store", "channel"], {"goal": ("sum", "sales_goal")}, main,
-                             {"store": all_stores, "category": category}, "目标")
-    traffic = None
-    if sem.has("traffic"):
-        filters = {"store": all_stores}
-        if sem.source("traffic").has("category"):
-            filters["category"] = category
-        traffic = wh.aggregate("traffic", ["store", "channel"], {"visitors": ("sum", "visitors")}, periods, filters, "客流")
-    subs = None
-    if sem.source("sales").has("subchannel"):
-        subs = wh.sales(["channel", "subchannel"], {k: periods[k] for k in ("week", "week_ly")},
-                        {"store": store, "category": category}, "二级渠道", tickets=False)
-    cats = wh.sales(["category"], {k: periods[k] for k in ("week", "week_ly")}, {"store": store}, "门店品类结构", tickets=False)
+    goals = goals_f.result() if goals_f else None
+    traffic = traffic_f.result() if traffic_f else None
+    subs = subs_f.result() if subs_f else None
+    cats = cats_f.result()
     cat_total = cats["sales__week"].sum()
     mix = [{"name": r["category"], "sales": r["sales__week"], "share": (ratio(r["sales__week"], cat_total) or 0) * 100,
             "sales_vs_ly": idx(r["sales__week"], r["sales__week_ly"]), "selected": r["category"] == category}

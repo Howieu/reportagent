@@ -15,6 +15,7 @@
 uv venv --python 3.12 .venv
 uv pip install -e ".[dev]" --python .venv/bin/python
 cp .env.example .env   # 按需填写 LLM_API_KEY
+(cd web && npm ci && npm run build)
 .venv/bin/reportagent demo
 REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb REPORTAGENT_SEMANTIC=semantic.demo.yaml .venv/bin/reportagent serve
 ```
@@ -60,6 +61,11 @@ REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb REPORTAGENT_SEMANTIC=semantic.demo
 | `LLM_API_KEY` | 模型密钥 |
 | `REPORTAGENT_COOKIE_SECURE` | 线上设为 `1` |
 | `REPORTAGENT_CHAT_PER_HOUR` | 每个访客每小时提问上限，默认 30 |
+
+## 第三方组件
+
+- [morphicons](https://github.com/guillermolg00/morphicons)（MIT）：图标变形。
+- [ReactDrops](https://reactdrops.dev)：`web/src/vendor/reactdrops` 里的 Liquid Glass Orb 和 Chromatic Button，遵循同目录 `LICENSE`，只作为本应用的一部分使用，不单独分发。
 
 ## 已知限制
 

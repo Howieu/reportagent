@@ -13,6 +13,8 @@ from sqlalchemy import and_, case, column, create_engine, distinct, func, or_, s
 
 from .config import Semantic
 
+CACHE_SECONDS = 600  # 维度和最新日期变化很慢，缓存可以省掉跨区往返
+
 
 class DataUnavailable(Exception):
     """数据不足以回答：提示给用户，而不是产出残缺结果。"""
@@ -86,6 +88,7 @@ class Warehouse:
             engine = create_engine(self.url, **kwargs)
         self.engine = engine
         self.log = []
+        self._cache = {}
 
     def _bind(self, day: date):
         fmt = self.semantic.date_format
@@ -151,6 +154,14 @@ class Warehouse:
         return self.aggregate("sales", dims, measures, periods, filters, purpose)
 
     def latest_date(self, source="sales"):
+        hit = self._cache.get(("latest", source))
+        if hit and time.time() - hit[0] < CACHE_SECONDS:
+            return hit[1]
+        value = self._latest_date(source)
+        self._cache[("latest", source)] = (time.time(), value)
+        return value
+
+    def _latest_date(self, source):
         src = self.semantic.source(source)
         tbl = self._table(source, ["date"])
         stmt = select(func.max(tbl.c[src.col("date")]).label("d"))
@@ -181,6 +192,9 @@ class Warehouse:
 
     def stores(self):
         """门店维度；没配 stores 表时从销售表取，全部视为同一对标组。"""
+        hit = self._cache.get("stores")
+        if hit and time.time() - hit[0] < CACHE_SECONDS:
+            return hit[1]
         if self.semantic.has("stores"):
             src = self.semantic.source("stores")
             names = [n for n in ("store", "name", "peer_group", "region", "city") if src.has(n)]
@@ -191,6 +205,7 @@ class Warehouse:
         for col, default in (("name", None), ("peer_group", "ALL"), ("region", ""), ("city", "")):
             if col not in df:
                 df[col] = df["store"] if col == "name" else default
+        self._cache["stores"] = (time.time(), df)
         return df
 
     def items(self, ids):

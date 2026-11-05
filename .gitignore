@@ -16,3 +16,7 @@ reports/
 *.duckdb
 *.duckdb.wal
 *.egg-info/
+.env.*
+!.env.example
+reportagent/static/
+web/node_modules/

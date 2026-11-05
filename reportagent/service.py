@@ -32,8 +32,8 @@ class State:
         self.engine = create_engine(self.url, pool_pre_ping=True)
         p = self.prefix
         with self.engine.begin() as db:
-            if p:
-                db.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
+            if p and db.execute(text("SELECT to_regnamespace('app')")).scalar() is None:
+                db.execute(text("CREATE SCHEMA app"))
             db.execute(text(f"CREATE TABLE IF NOT EXISTS {p}conversations (id TEXT PRIMARY KEY, owner TEXT, title TEXT, created DOUBLE PRECISION, updated DOUBLE PRECISION)"))
             serial = "BIGSERIAL PRIMARY KEY" if p else "INTEGER PRIMARY KEY AUTOINCREMENT"
             db.execute(text(f"CREATE TABLE IF NOT EXISTS {p}messages (id {serial}, conversation TEXT, role TEXT, content TEXT, blocks TEXT, created DOUBLE PRECISION)"))

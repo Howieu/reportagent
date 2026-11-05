@@ -54,7 +54,7 @@ sources:
     date: biz_date
     user: visitor_id
     event: event
-    note: 行为数据来自 RetailRocket 公开数据集（2015-05 至 2015-09，ID 已脱敏），与订单报告不是同一家公司。各步骤为同周期去重访客之比，不是同一用户的顺序路径。
+    note: 行为数据来自 RetailRocket 公开数据集（2015 年 5 至 9 月，线上看板保留最后约 12 周，ID 已脱敏），与订单报告不是同一家公司。各步骤为同周期去重访客之比，不是同一用户的顺序路径。
     steps:
       - {name: 浏览, value: view}
       - {name: 加购, value: addtocart}
