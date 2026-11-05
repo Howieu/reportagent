@@ -5,19 +5,19 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://RENDER_HOST/api/:path*"
+      "destination": "https://reportagent-api.onrender.com/api/:path*"
     },
     {
       "source": "/reports/:path*",
-      "destination": "https://RENDER_HOST/reports/:path*"
+      "destination": "https://reportagent-api.onrender.com/reports/:path*"
     },
     {
       "source": "/funnel",
-      "destination": "https://RENDER_HOST/funnel"
+      "destination": "https://reportagent-api.onrender.com/funnel"
     },
     {
       "source": "/funnel/:path*",
-      "destination": "https://RENDER_HOST/funnel/:path*"
+      "destination": "https://reportagent-api.onrender.com/funnel/:path*"
     }
   ],
   "installCommand": "true"
