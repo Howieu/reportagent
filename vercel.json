@@ -1,0 +1,11 @@
+{
+  "outputDirectory": "reportagent/static",
+  "buildCommand": "",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://RENDER_HOST/api/:path*" },
+    { "source": "/reports/:path*", "destination": "https://RENDER_HOST/reports/:path*" },
+    { "source": "/funnel", "destination": "https://RENDER_HOST/funnel" },
+    { "source": "/funnel/:path*", "destination": "https://RENDER_HOST/funnel/:path*" }
+  ]
+}

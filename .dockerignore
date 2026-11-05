@@ -1,0 +1,6 @@
+data/
+.venv/
+tests/
+.git/
+.env
+reports/

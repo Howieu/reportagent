@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ r.store_name }} {{ r.category }} wk{{ r.week }} 业绩报告</title>
+<style>
+:root {
+  --ink:#3f3f46; --muted:#71717a; --line:#e8e4e6; --surface:#fff; --band:#fbd9e5; --card:#fde8ef; --card-strong:#f8c8d9;
+  --accent:#b8325f; --up:#1f7a3f; --down:#c02626; --mix1:#fbd9e0; --mix2:#fdecb6; --mix3:#d9f2de; --mix4:#ecdffa;
+}
+{% if r.branding.accent %}:root { --accent:{{ r.branding.accent }}; }{% endif %}
+.wordmark { font-weight:700; letter-spacing:.32em; font-size:15px; margin-bottom:12px; }
+.synthetic { border:1px solid var(--accent); color:var(--accent); font-size:12px; padding:5px 10px; margin-bottom:14px; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--surface); color:var(--ink); font:14px/1.65 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",Arial,sans-serif; }
+main { max-width:980px; margin:0 auto; padding:24px 16px 40px; }
+h1 { font-size:26px; line-height:1.3; margin:0 0 4px; }
+h2 { font-size:17px; margin:30px 0 10px; color:var(--accent); }
+h3 { font-size:14px; margin:18px 0 8px; }
+p { margin:6px 0; }
+.note { color:var(--muted); font-size:12px; }
+.banner { background:var(--band); padding:10px 16px; font-size:20px; font-weight:600; margin:14px 0 16px; }
+.kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+@media (max-width:560px) { .kpis { grid-template-columns:repeat(2,1fr); } }
+.kpi { background:var(--card); padding:10px 14px; break-inside:avoid; }
+.kpi .t { font-size:13px; color:var(--muted); }
+.kpi .v { font-size:26px; line-height:1.3; }
+.kpi .d { font-size:15px; }
+.up { color:var(--up); } .down { color:var(--down); } .flat { color:var(--muted); }
+.summary { background:#faf7f8; border-left:4px solid var(--accent); padding:10px 16px; }
+.summary p { margin:4px 0; }
+.mix { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:6px; }
+.mix div { padding:12px 14px; text-align:center; }
+.mix b { display:block; font-weight:500; text-align:left; margin-bottom:10px; }
+.mix0 { background:var(--mix1);} .mix1 { background:var(--mix2);} .mix2 { background:var(--mix3);} .mix3 { background:var(--mix4);}
+.mix .sel { outline:2px solid var(--accent); outline-offset:-2px; }
+.scroll { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:13px; white-space:nowrap; }
+th { background:var(--card-strong); text-align:right; padding:6px 8px; font-weight:600; }
+td { text-align:right; padding:5px 8px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+th:first-child, td:first-child { text-align:left; }
+tr.total td { font-weight:600; background:var(--card); }
+tr.sub td:first-child { padding-left:24px; color:var(--muted); }
+.tree { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+.node { border:1px solid var(--line); padding:8px 12px; break-inside:avoid; }
+.node.root { background:var(--card); border-color:var(--card-strong); }
+.node .t { font-weight:600; }
+.node .m { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--muted); }
+.spark { width:100%; height:42px; display:block; margin-top:4px; }
+.formula { color:var(--muted); font-size:12px; margin:0 0 8px; }
+.cbar { display:grid; grid-template-columns:80px 1fr 56px; gap:8px; align-items:center; font-size:13px; margin:3px 0; }
+.ctrack { position:relative; height:12px; background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat; }
+.ctrack i { position:absolute; top:1px; bottom:1px; background:var(--accent); border-radius:3px; }
+.cval { text-align:right; font-variant-numeric:tabular-nums; }
+.dir { font-weight:600; border-bottom:2px solid var(--ink); margin:18px 0 8px; padding-bottom:3px; }
+.sub-block { margin:10px 0 14px; break-inside:avoid; }
+.sub-head b { font-size:14px; }
+.metric { color:var(--muted); font-size:13px; }
+.fam { margin:6px 0 6px 18px; }
+.sku { margin:4px 0 4px 18px; display:flex; gap:10px; align-items:flex-start; }
+.sku img { width:48px; height:48px; object-fit:cover; }
+.tag { color:var(--up); font-weight:600; }
+.tag-low { color:var(--muted); }
+details { margin-top:8px; font-size:12px; color:var(--muted); }
+pre { white-space:pre-wrap; word-break:break-all; background:#faf7f8; padding:8px; font-size:11px; }
+footer { margin-top:30px; border-top:1px solid var(--line); padding-top:10px; }
+@media print { main { max-width:none; padding:0 8px; } details { display:none; } h2 { break-after:avoid; } }
+@page { size:A4; margin:12mm 10mm; }
+</style>
+</head>
+<body>
+<main>
+{% if r.synthetic %}<div class="synthetic" role="note">模拟数据：本报告的门店、商品和数字均为合成，仅用于产品演示，不代表任何公司的真实经营情况。</div>{% endif %}
+<h1>{{ r.store_name }} · {{ r.category }} · wk{{ r.week }} 业绩报告</h1>
+<div class="note">{{ r.source }} · {{ r.period.week.start }} 至 {{ r.period.week.end }} · 文字说明由 AI 或规则模板生成，所有数字由代码计算</div>
+<div class="banner">数据更新至：{{ r.latest_date }}</div>
+
+{% set n = r.tree.nodes %}
+<section class="kpis" aria-label="{{ r.channel }} 渠道核心指标">
+  {% for key, title, value in [
+    ('sales', 'Sales vs LY', n.sales.ty | money),
+    ('ab', 'AB vs LY', n.ab.ty | money),
+    ('ai', 'AI vs LY', '%.2f' | format(n.ai.ty)),
+    ('tickets', 'Trans vs LY', n.tickets.ty | num),
+    ('traffic', 'Traffic vs LY', (n.traffic.ty | num) if n.traffic else '—'),
+    ('cr', 'CR vs LY', ('%.1f%%' | format(n.cr.ty * 100)) if n.cr else '—'),
+  ] if key in n %}
+  <div class="kpi"><div class="t">{{ r.channel }} {{ title }}</div><div class="v">{{ value }}</div><div class="d">{{ n[key].vs_ly | delta }}</div></div>
+  {% endfor %}
+</section>
+
+<h2>业绩总结</h2>
+<div class="summary">{% for line in s.summary.text.split('\n') if line.strip() %}<p>{{ line | rich }}</p>{% endfor %}</div>
+
+{% set has_goal = r.overall.week.sales_vs_goal is not none %}{% set L = r.labels %}
+<h2>整体销售表现</h2>
+<p>{{ s.overall.text | rich }}</p>
+<div class="scroll"><table>
+  <tr><th>时段</th><th>Sales</th>{% if has_goal %}<th>vs Goal</th><th>与对标差</th>{% endif %}<th>vs LY</th><th>与对标差</th><th>Qty vs LY</th><th>占全部{{ L.store }}</th><th>排名</th><th>与前一名差距</th></tr>
+  {% for key, name in [('week','本周'),('r4','滚动 4 周'),('ytd','财年累计')] %}{% set o = r.overall[key] %}
+  <tr><td>{{ name }}</td><td>{{ o.sales | money }}</td>{% if has_goal %}<td>{{ o.sales_vs_goal | delta }}</td>
+  <td>{{ (o.sales_vs_goal - o.sales_vs_goal_comp) | gap if o.sales_vs_goal is not none and o.sales_vs_goal_comp is not none else '—' }}</td>{% endif %}
+  <td>{{ o.sales_vs_ly | delta }}</td>
+  <td>{{ (o.sales_vs_ly - o.sales_vs_ly_comp) | gap if o.sales_vs_ly is not none and o.sales_vs_ly_comp is not none else '—' }}</td>
+  <td>{{ o.qty_vs_ly | delta }}</td><td>{{ '%.1f%%' | format(o.share) if o.share is not none else '—' }}</td>
+  <td>#{{ o.rank }} / {{ o.peer_count }}</td><td>{{ (o.prev_store ~ ' ' ~ (o.prev_gap | money)) if o.prev_store else '第一名' }}</td></tr>
+  {% endfor %}
+</table></div>
+
+<h3>{{ L.store }}品类结构（本周）</h3>
+<div class="mix">{% for m in r.mix[:4] %}<div class="mix{{ loop.index0 }}{{ ' sel' if m.selected }}"><b>{{ m.name }}</b>{{ m.sales | money }}（{{ '%.1f' | format(m.share) }}%）<br>{{ m.sales_vs_ly | delta }}</div>{% endfor %}</div>
+
+<h2>{{ L.channel }}分析</h2>
+<p>{{ s.channel.text | rich }}</p>
+<div class="scroll"><table>
+  <tr><th>{{ L.channel }}</th><th>Sales</th><th>占比</th>{% if has_goal %}<th>vs Goal</th>{% endif %}<th>vs LY</th><th>与对标差</th><th>Qty vs LY</th><th>排名</th></tr>
+  {% for c in r.channels %}
+  <tr class="total"><td>{{ c.channel }}</td><td>{{ c.sales | money }}</td><td>{{ '%.1f%%' | format(c.share) }}</td>{% if has_goal %}<td>{{ c.sales_vs_goal | delta }}</td>{% endif %}<td>{{ c.sales_vs_ly | delta }}</td>
+  <td>{{ (c.sales_vs_ly - c.sales_vs_ly_comp) | gap if c.sales_vs_ly is not none and c.sales_vs_ly_comp is not none else '—' }}</td><td>{{ c.qty_vs_ly | delta }}</td><td>#{{ c.rank }}</td></tr>
+  {% for x in c.subs %}<tr class="sub"><td>{{ x.name }}</td><td>{{ x.sales | money }}</td><td>{{ '%.1f%%' | format(x.share) }}</td>{% if has_goal %}<td>—</td>{% endif %}<td>{{ x.sales_vs_ly | delta }}</td><td>—</td><td>{{ x.qty_vs_ly | delta }}</td><td>—</td></tr>{% endfor %}
+  {% endfor %}
+</table></div>
+
+<h2>{{ r.channel }}销售分析</h2>
+<p>{{ s.tree.text | rich }}</p>
+<p class="formula">Sales = {% if 'traffic' in n %}Traffic × CR{% else %}Trans{% endif %} × AI × Price/item。下图是近 4 周的 vs LY 走势。</p>
+<div class="tree">
+  {% for key in ['sales','traffic','cr','tickets','ab','ai','price','qty'] if key in n %}{% set x = n[key] %}
+  <div class="node{{ ' root' if key == 'sales' }}">
+    <div class="t">{{ node_labels[key] }} {{ x.vs_ly | delta }}</div>
+    <div class="m"><span>{% if key == 'cr' %}{{ '%.1f%%' | format((x.ly or 0) * 100) }} → {{ '%.1f%%' | format((x.ty or 0) * 100) }}{% elif key in ['ai','price','ab'] %}{{ '%.1f' | format(x.ly or 0) }} → {{ '%.1f' | format(x.ty or 0) }}{% else %}{{ x.ly | num }} → {{ x.ty | num }}{% endif %}</span><span>与对标 {{ x.vs_comp | gap }}</span></div>
+    {{ r.tree.trend[key] | spark }}
+  </div>
+  {% endfor %}
+</div>
+<h3>Sales 同比变化的因素分解</h3>
+{{ r.tree.contributions | bars }}
+<p class="note">对数分解，各项相加等于 100%。正值表示与 Sales 变化同向，负值表示反向。</p>
+
+<h2>{{ r.channel }}商品分析</h2>
+{% set d = r.drill %}{% set m = 'Sales' if r.focus == 'sales' else 'Qty' %}{% set unit = (r.focus == 'sales') %}
+<p class="note">{% if d.has_exclusion %}涨跌排序按排除新品后的同口径变化计算，所以指数高于 100 的对象也可能排在下降方向。{% endif %}</p>
+<p>同比表现靠前的{{ L.subcategory }}：{% for t in d.top %}{{ t.name }}（{{ t.vs_ly | fi }}）{{ '、' if not loop.last }}{% endfor %}；{% if d.bottom %}靠后的：{% for t in d.bottom %}{{ t.name }}（{{ t.vs_ly | fi }}）{{ '、' if not loop.last }}{% endfor %}{% endif %}。</p>
+{% if d.segments %}<div class="scroll"><table><tr><th>商品分组</th><th>占比</th><th>Sales vs LY</th><th>Qty vs LY</th></tr>
+{% for g in d.segments %}<tr><td>{{ g.name }}</td><td>{{ '%.1f%%' | format(g.share) if g.share is not none else '—' }}</td><td>{{ g.sales_vs_ly | delta }}</td><td>{{ g.qty_vs_ly | delta }}</td></tr>{% endfor %}</table></div>{% endif %}
+
+{% macro metric(x) %}{{ m }} vs LY {{ x.vs_ly | delta }}（与对标 {{ x.vs_comp | gap }}，较 4 周 {{ x.vs_r4 | gap }}）{% if x.share is not none %}，占全部{{ L.store }} {{ '%.1f' | format(x.share) }}%{% endif %}{% endmacro %}
+{% macro change(x, word) %}{% if x.core_vs_ly is not none %}；排除新品后 vs LY {{ x.core_vs_ly | fi }}{% endif %}，{{ '上升' if x.dif >= 0 else '下降' }} {{ (x.dif | abs) | money if unit else (x.dif | abs) | num }}（其他{{ L.channel }}{{ '上升' if x.dif_other >= 0 else '下降' }} {{ (x.dif_other | abs) | money if unit else (x.dif_other | abs) | num }}）{% endmacro %}
+{% macro sku(i) %}<div class="sku">{% if i.image %}<img src="{{ i.image }}" alt="{{ i.name }}">{% endif %}<div><b>{{ i.name }}</b> <span class="note">{{ i.id }}</span><div class="metric">{{ metric(i) }}{% if i.available is not none %}，可售率 {{ i.available | fi }}%{% endif %}</div>{% if i.potential %}<span class="tag">潜力【高】：{{ i.reason }}</span>{% elif i.reason %}<span class="tag-low">{{ i.reason }}</span>{% endif %}</div></div>{% endmacro %}
+{% for key, title in [('up', m ~ ' 上升 Top ' ~ L.subcategory), ('down', m ~ ' 下降 Top ' ~ L.subcategory)] %}
+<div class="dir">{{ title }}</div>
+{% if not d[key] %}<p class="note">没有{{ L.subcategory }}处于这个方向。</p>{% endif %}
+{% for sub in d[key] %}
+<div class="sub-block">
+  <div class="sub-head"><b>{{ L.subcategory }} {{ sub.name }}</b>　<span class="metric">{{ metric(sub) }}{{ change(sub) }}，贡献 {{ sub.contribution | fi }}%</span></div>
+  {% for f in sub.families %}
+  <div class="fam"><b>{{ L.family }} {{ f.name }}</b>　<span class="metric">{{ metric(f) }}{{ change(f) }}</span>
+    {% for i in f['items'] %}{{ sku(i) }}{% endfor %}
+  </div>
+  {% endfor %}
+  {% if sub.others %}<div class="fam"><b>其他高潜力{{ L.item }}</b>{% for i in sub.others %}{{ sku(i) }}{% endfor %}</div>{% endif %}
+</div>
+{% endfor %}
+{% endfor %}
+
+<h2>区域对比（{{ r.category }}）</h2>
+<div class="scroll"><table>
+  <tr><th>区域</th><th>Sales</th><th>vs LY</th>{% if has_goal %}<th>vs Goal</th><th>与目标差额</th>{% endif %}<th>Trans</th><th>Trans vs LY</th><th>AB</th><th>AB vs LY</th></tr>
+  {% for x in r.regions %}<tr class="{{ 'total' if x.level == 'total' }}"><td>{{ x.name }}</td><td>{{ x.sales | money }}</td><td>{{ x.sales_vs_ly | delta }}</td>{% if has_goal %}<td>{{ x.sales_vs_goal | delta }}</td><td>{{ x.goal_gap | money }}</td>{% endif %}<td>{{ x.trans | num }}</td><td>{{ x.trans_vs_ly | delta }}</td><td>{{ x.ab | money }}</td><td>{{ x.ab_vs_ly | delta }}</td></tr>{% endfor %}
+</table></div>
+
+<footer class="note">
+  {% if r.data_note %}{{ r.data_note }}<br>{% endif %}生成时间 {{ generated }}。去年同期按 364 天对齐星期；对标为同组其他{{ L.store }}合计（同组共 {{ r.peers }} 个）。
+  文字来源：{% for k, label in [('summary','总结'),('overall','全渠道'),('channel','渠道'),('tree','销售树')] %}{{ label }}={{ s[k].mode }}{% if s[k].note %}（{{ s[k].note }}）{% endif %}{{ '，' if not loop.last }}{% endfor %}。
+  {% if queries %}<details><summary>查看本报告执行的 {{ queries | length }} 条 SQL</summary>{% for q in queries %}<p><b>{{ q.purpose }}</b>（{{ q.rows }} 行，{{ q.ms }} ms）</p><pre>{{ q.sql }}</pre>{% endfor %}</details>{% endif %}
+</footer>
+</main>
+</body>
+</html>

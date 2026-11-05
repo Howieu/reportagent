@@ -11,3 +11,8 @@ __pycache__/
 wk*_Online_*.html
 report*.html
 site/node_modules/
+
+reports/
+*.duckdb
+*.duckdb.wal
+*.egg-info/
