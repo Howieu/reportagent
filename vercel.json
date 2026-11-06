@@ -1,4 +1,4 @@
 {
   "framework": "fastapi",
-  "buildCommand": "cd web && npm ci && npm run build -- --outDir ../public --emptyOutDir"
+  "buildCommand": "cd web && npm ci && npm run build"
 }

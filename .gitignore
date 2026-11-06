@@ -21,4 +21,3 @@ reports/
 reportagent/static/
 web/node_modules/
 .vercel
-public/
