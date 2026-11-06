@@ -18,6 +18,7 @@ from .chat import ChatAgent
 from .funnel import analyze_funnel
 from .render import find_chrome, html_to_pdf_bytes, render_funnel
 from .service import App
+from .tools import web_search_enabled
 from .warehouse import DataUnavailable
 
 STATIC = Path(__file__).parent / "static"
@@ -44,6 +45,7 @@ class ChatIn(BaseModel):
     conversation: str | None = None
     project: str | None = None
     assist: bool = False
+    web: bool = False
 
 
 class ReportIn(BaseModel):
@@ -86,6 +88,7 @@ def create_app(core: App | None = None) -> FastAPI:
     store = core.state
     secure = os.environ.get("REPORTAGENT_COOKIE_SECURE", "") == "1"
     chat_limit = RateLimiter(int(os.environ.get("REPORTAGENT_CHAT_PER_HOUR", "30")))
+    web_limit = RateLimiter(int(os.environ.get("REPORTAGENT_WEB_PER_HOUR", "10")))
     report_limit = RateLimiter(int(os.environ.get("REPORTAGENT_REPORTS_PER_HOUR", "30")))
     api = FastAPI(title="ReportAgent", docs_url=None, redoc_url=None)
 
@@ -127,7 +130,7 @@ def create_app(core: App | None = None) -> FastAPI:
             "stores": [{"id": r["store"], "name": r["name"]} for _, r in stores.iterrows()],
             "categories": agent.tools.values("category"), "channels": agent.tools.values("channel"),
             "default_channel": core.semantic.default_channel, "default_focus": core.semantic.default_focus, "default_category": core.semantic.default_category,
-            "week": week, "latest": latest, "examples": random.sample(list(core.semantic.examples), len(core.semantic.examples)), "data_note": core.semantic.data_note, "has_funnel": core.semantic.has("funnel"), "server_pdf": bool(find_chrome()),
+            "week": week, "latest": latest, "examples": random.sample(list(core.semantic.examples), len(core.semantic.examples)), "data_note": core.semantic.data_note, "has_funnel": core.semantic.has("funnel"), "server_pdf": bool(find_chrome()), "web_search": web_search_enabled(),
         }
 
     @api.get("/api/conversations")
@@ -185,13 +188,18 @@ def create_app(core: App | None = None) -> FastAPI:
             raise HTTPException(429, "提问太频繁，请稍后再试")
         cid = body.conversation if body.conversation and store.conversation(body.conversation, uid) else store.create(question, uid, body.project)
         history = store.conversation(cid, uid)["messages"]
+        web = body.web and web_search_enabled()
+        web_blocked = web and not (web_limit.allow(uid) and web_limit.allow(client_ip(request)))
+        web = web and not web_blocked
         store.add(cid, "user", question)
 
         def stream():
             blocks, answer, finished = [], "", False
             try:
                 yield sse({"type": "conversation", "id": cid})
-                for event in agent.run(question, history, body.assist):
+                if web_blocked:
+                    yield sse({"type": "notice", "text": "联网搜索已达每小时上限，这次不联网。"})
+                for event in agent.run(question, history, body.assist, web):
                     if event["type"] == "answer":
                         answer = event["text"]
                     elif event["type"] == "error":

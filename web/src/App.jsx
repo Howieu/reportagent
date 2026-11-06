@@ -277,6 +277,23 @@ function Result({ result, onOpenFunnel }) {
   );
 }
 
+function WebSources({ result }) {
+  return (
+    <div className="result">
+      <h4>{result.title}</h4>
+      <ol className="sources">
+        {result.items.map((x) => (
+          <li key={x.url}>
+            <a href={x.url} target="_blank" rel="noopener noreferrer">{x.title}</a>
+            <span>{[x.media, x.date].filter(Boolean).join(' · ')}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="assume">外部网页内容未经核实，不代表内部数据。</p>
+    </div>
+  );
+}
+
 function Collapsible({ title, defaultOpen = true, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -293,9 +310,11 @@ const PILL = { running: '执行中', done: '执行完成', retry: '正在调整'
 
 /** 把事件流折叠成可渲染的状态：实时流和历史回放走同一段逻辑。 */
 function fold(events) {
-  const s = { matched: null, thought: '', thinking: false, tasks: [], results: [], answer: null, error: null, stopped: false };
+  const s = { rewrite: null, notices: [], matched: null, thought: '', thinking: false, tasks: [], results: [], answer: null, error: null, stopped: false };
   for (const e of events) {
-    if (e.type === 'matched') s.matched = e.question;
+    if (e.type === 'rewrite') s.rewrite = e.text;
+    else if (e.type === 'notice') s.notices.push(e.text);
+    else if (e.type === 'matched') s.matched = e.question;
     else if (e.type === 'thinking') { s.thinking = e.status === 'running'; if (e.text) s.thought = e.text; }
     else if (e.type === 'task') {
       if (e.status === 'running') s.tasks.push({ ...e });
@@ -317,6 +336,8 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
     <div className="msg-bot">
       <div className="bot-orb" aria-hidden="true">{live ? <FluidAgentOrb preset="monochrome" state={s.thinking ? 'thinking' : 'searching'} style={{ width: 24, height: 24 }} animateEntrance={false} /> : <Logo size={22} />}</div>
       <div className="bot-body">
+        {s.notices.map((n) => <p className="warn" key={n}>{n}</p>)}
+        {s.rewrite && <div className="step-note">已理解为：{s.rewrite}</div>}
         {s.matched && <div className="step-note">从问答库匹配到相似问题：{s.matched}</div>}
         {s.thought && <Collapsible title="思考完成"><div className="thought">{s.thought}</div></Collapsible>}
         {s.tasks.length > 0 && (
@@ -338,7 +359,7 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
         )}
         {s.answer && <div className="answer"><Rich text={s.answer.text} /></div>}
         {s.answer?.mode === 'fallback' && <p className="warn">模型生成的文字未通过数字校验，已换成规则生成的结论。</p>}
-        {s.results.map((r, i) => (r.kind === 'report' ? (
+        {s.results.map((r, i) => (r.kind === 'web' ? <WebSources key={i} result={r} /> : r.kind === 'report' ? (
           <div className="report-card" key={i}>
             <div><b>{r.report.title}</b>{r.assumptions?.length > 0 && <div className="assume">{r.assumptions.join('；')}</div>}</div>
             <button className="chip" onClick={() => onOpenReport(r.report)}>查看报告</button>
@@ -363,7 +384,7 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
 }
 
 // ---------- 输入框 ----------
-function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big, project, onClearProject }) {
+function Composer({ meta, busy, assist, onAssist, web, onWeb, onSend, onStop, onReport, big, project, onClearProject }) {
   const [text, setText] = useState('');
   const box = useRef(null);
   const resize = () => { const t = box.current; if (t) { t.style.height = 'auto'; t.style.height = `${Math.min(t.scrollHeight, 140)}px`; } };
@@ -386,6 +407,7 @@ function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big,
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!busy) send(); } }} />
         <div className="box-row">
           <button className="switch" role="switch" aria-checked={assist} title="开启后先拆解问题再取数，适合模糊问题" onClick={() => onAssist(!assist)}><i />辅助思考</button>
+          {meta?.web_search && <button className="switch" role="switch" aria-checked={web} title="开启后可以查询外部公开信息" onClick={() => onWeb(!web)}><i />联网搜索</button>}
           <button className="chip" type="button" onClick={onReport}><Icon icon={FileText} size={14} />生成报告</button>
           <button className="send" aria-label={busy ? '停止' : '发送'} disabled={!busy && !text.trim()} onClick={busy ? onStop : send}><Icon icon={busy ? Square : ArrowUp} color="#fff" /></button>
         </div>
@@ -492,6 +514,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [assist, setAssist] = useState(true);
+  const [web, setWeb] = useState(false);
   const [panel, setPanel] = useState(null);
   const [dialog, setDialog] = useState(false);
   const [sideOpen, setSideOpen] = useState(window.innerWidth > 1000);
@@ -540,7 +563,7 @@ export default function App() {
       return copy;
     });
     try {
-      const r = await fetch('/api/chat', { ...json('POST', { message: question, conversation: cidRef.current, project: projectRef.current, assist }), signal: ctrl.signal });
+      const r = await fetch('/api/chat', { ...json('POST', { message: question, conversation: cidRef.current, project: projectRef.current, assist, web }), signal: ctrl.signal });
       if (!r.ok || !r.body) {
         let detail = `请求失败（${r.status}）`;
         try { detail = (await r.json()).detail || detail; } catch { /* 非 JSON */ }
@@ -579,7 +602,7 @@ export default function App() {
     setMessages((m) => m.map((x, i) => (i === m.length - 1 ? { ...x, live: false } : x)));
     setPanel((p) => (p?.loading ? null : p));
     refresh();
-  }, [assist, openReport, refresh]);
+  }, [assist, web, openReport, refresh]);
 
   const newChat = (project = null) => { if (busy) return; setCid(null); setProjectId(project); setMessages([]); setPanel(null); refresh(); };
   const openConversation = async (id) => {
@@ -617,7 +640,7 @@ export default function App() {
   const empty = messages.length === 0;
   const currentProject = projects.find((p) => p.id === projectId) || null;
   const composer = (
-    <Composer meta={meta} busy={busy} assist={assist} onAssist={setAssist} onSend={ask} onStop={() => controller.current?.abort()} onReport={() => setDialog(true)} big={empty}
+    <Composer meta={meta} busy={busy} assist={assist} onAssist={setAssist} web={web} onWeb={setWeb} onSend={ask} onStop={() => controller.current?.abort()} onReport={() => setDialog(true)} big={empty}
       project={currentProject} onClearProject={cid ? null : () => setProjectId(null)} />
   );
   return (
