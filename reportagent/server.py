@@ -126,7 +126,7 @@ def create_app(core: App | None = None) -> FastAPI:
             week, latest = "", ""
         return {
             "name": core.semantic.name, "synthetic": core.semantic.synthetic, "branding": core.semantic.branding, "labels": core.semantic.labels, "llm": bool(core.llm and core.llm.enabled),
-            "model": core.llm.model if core.llm and core.llm.enabled else None,
+            "agents_ready": bool(core.llm and core.llm.enabled),
             "stores": [{"id": r["store"], "name": r["name"]} for _, r in stores.iterrows()],
             "categories": agent.tools.values("category"), "channels": agent.tools.values("channel"),
             "default_channel": core.semantic.default_channel, "default_focus": core.semantic.default_focus, "default_category": core.semantic.default_category,

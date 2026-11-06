@@ -4,6 +4,7 @@ import difflib
 import json
 import re
 
+from .agents import PLANNING_AGENT, REWRITE_AGENT
 from .funnel import latest_funnel_week
 from .narrative import ENTITY_DOWN, ENTITY_UP, check_text
 from .tools import SCHEMAS, WEB_MAX_CALLS, WEB_SCHEMA, ToolError, Tools
@@ -106,7 +107,7 @@ class ChatAgent:
         self.tools = Tools(app)
 
     def rewrite(self, question, history):
-        """把依赖上下文的追问改写成独立问题。首轮不改写，改写失败就用原问题。"""
+        """问题改写 Agent：把依赖上下文的追问改写成独立问题。首轮不改写，失败就用原问题。"""
         asked = [m["content"][:300] for m in list(history)[-6:] if m.get("role") == "user" and m.get("content")]
         if not asked:
             return question
@@ -133,14 +134,14 @@ class ChatAgent:
         """生成事件字典：rewrite / thinking / matched / task / result / answer / error。"""
         llm = self.app.llm
         if not llm or not llm.enabled:
-            yield {"type": "error", "message": "没有配置 LLM_API_KEY，对话不可用。你仍然可以用“生成报告”直接出报告。"}
+            yield {"type": "error", "message": "没有配置 Agent 模型，对话不可用。你仍然可以用“生成报告”直接出报告。"}
             return
         semantic = self.app.semantic
         latest_week = self.app.wh.latest_complete_week()
         original = question
         question = self.rewrite(original, history)
         if question != original:
-            yield {"type": "rewrite", "original": original, "text": question}
+            yield {"type": "rewrite", "agent": REWRITE_AGENT, "original": original, "text": question}
         schemas = [*SCHEMAS, WEB_SCHEMA] if web else SCHEMAS
         messages = [{"role": "system", "content": system_prompt(semantic, self.tools, latest_week, web)}]
         messages += clip_history(history)
@@ -153,9 +154,9 @@ class ChatAgent:
         messages.append({"role": "user", "content": question})
 
         if assist:
-            yield {"type": "thinking", "status": "running"}
+            yield {"type": "thinking", "agent": PLANNING_AGENT, "status": "running"}
             thought = self._think(messages)
-            yield {"type": "thinking", "status": "done", "text": thought}
+            yield {"type": "thinking", "agent": PLANNING_AGENT, "status": "done", "text": thought}
             if thought:
                 messages.append({"role": "assistant", "content": thought})
                 messages.append({"role": "user", "content": "按这个思路调用工具完成。"})
@@ -165,7 +166,7 @@ class ChatAgent:
         task_no = searches = 0
         for _ in range(MAX_ROUNDS):
             try:
-                message = llm.chat(messages, tools=schemas, temperature=0.1)
+                message = llm.chat(messages, tools=schemas, temperature=0.1)  # 意图识别 Agent
             except Exception as exc:
                 yield {"type": "error", "message": f"模型调用失败（{type(exc).__name__}），请稍后重试。"}
                 return
@@ -173,7 +174,7 @@ class ChatAgent:
             if not calls:
                 text = message.content or ""
                 problem = self._problem(text, results, facts, scope)
-                if problem and results:  # 给一次修正机会，还不行再用规则结论
+                if problem and results:  # 回答修正 Agent：给一次修正机会，还不行再用规则结论
                     try:
                         text = llm.chat([*messages, {"role": "assistant", "content": text}, {"role": "user", "content": (
                             f"这段回答没通过校验：{problem}。请重写，数字必须照抄工具结果，不要换算。")}], temperature=0).content or ""
@@ -226,6 +227,7 @@ class ChatAgent:
         yield from self._finish("", results, facts, scope, web)
 
     def _think(self, messages):
+        """辅助思考 Agent：先梳理理解和取数思路，不调用工具。"""
         try:
             prompt = messages + [{"role": "user", "content": (
                 "先不要调用工具。用 2 到 4 句写出你对问题的理解、涉及的指标和维度、准备怎么取数。不要写任何具体数值，不用 Markdown。")}]

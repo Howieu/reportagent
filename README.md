@@ -17,7 +17,7 @@ ReportAgent 连接零售数仓，让业务同学用对话查数，或者选好�
 | 漏斗分析 | 浏览 → 加购 → 成交，可选维度并逐级下钻 |
 | 项目管理 | 按项目组织任务，对话和报告都归在任务里 |
 | 联网搜索 | 输入框的开关，默认关闭。打开后可查外部公开信息，回答附来源 |
-| 追问改写 | 把依赖上下文的追问改写成独立问题，并在回答里展示 |
+| 追问改写 | 问题改写 Agent 把依赖上下文的追问改成独立问题，并在回答里展示 |
 | 批量生成 | 命令行批量导出 HTML 和 PDF，可接入定时任务 |
 
 ## 工作原理
@@ -34,11 +34,14 @@ semantic.yaml（表和字段的映射）
 工作台 / HTML / PDF
 ```
 
-- **模型不写 SQL：** 模型只能调用固定工具并传结构化参数。筛选值会先对应到数仓里的真实取值。
+- **模型不写 SQL：** 意图识别 Agent 只能调用固定工具并传结构化参数。筛选值会先对应到数仓里的真实取值。
+- **Agent 按职责划分：** 问题改写、辅助思考、意图识别、回答修正和报告撰写 Agent，模型和服务商都由环境变量配置。
 - **文字要过校验：** 出现数据里没有的数字、把指数写成增幅、涨跌方向明显写反或命中禁用词时，会退回规则文字。
 - **没有的数据不编造：** 没配置目标、客流或库存表时，相关指标不显示。
 
 校验拦不住所有语义错误，重要结论仍要对照表格。
+
+完整链路见 [架构与链路图](docs/architecture.html)，包括追问改写、辅助思考和联网开关的各种走法。
 
 ## 快速开始
 
@@ -66,7 +69,7 @@ REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb .venv/bin/reportagent --semantic s
 
 打开 <http://127.0.0.1:8501>。合成数据的界面和报告都会显示明确标记。
 
-要启用对话，复制 `.env.example` 为 `.env` 并填写 `LLM_API_KEY`。接口兼容 OpenAI，默认使用模型服务。`.env.example` 默认指向真实公开数据，用合成数据时要保留上面命令里的连接设置。
+要启用对话，复制 `.env.example` 为 `.env`，填写 `AGENT_API_KEY`、`AGENT_BASE_URL` 和 `AGENT_MODEL`。接口需要兼容 OpenAI，模型需要支持工具调用。`.env.example` 默认指向真实公开数据，用合成数据时要保留上面命令里的连接设置。
 
 ### 使用公开数据
 
@@ -152,15 +155,17 @@ Render 和 Vercel 是两种独立的部署方式，任选其一都能运行完�
 | `REPORTAGENT_DB_URL` | 数仓连接，线上用只读账号 |
 | `REPORTAGENT_APP_DB_URL` | 会话和报告的存储库，不设置时用本地 SQLite |
 | `REPORTAGENT_SEMANTIC` | 语义配置文件 |
-| `LLM_API_KEY` / `LLM_BASE_URL` | 模型密钥和接口地址 |
-| `LLM_MODEL` | 对话模型，必须支持工具调用，默认 `agent-model` |
-| `LLM_TEXT_MODEL` | 报告文字模型，不设置时同对话模型 |
-| `LLM_FALLBACK_MODEL` | 被限流时切换的模型，付费模型会产生费用 |
+| `AGENT_API_KEY` / `AGENT_BASE_URL` | Agent 模型的密钥和接口地址 |
+| `AGENT_MODEL` | 问题改写、辅助思考、意图识别、回答修正 Agent 的模型，必须支持工具调用 |
+| `WRITER_AGENT_MODEL` | 报告撰写 Agent 的模型，不设置时同 `AGENT_MODEL` |
+| `AGENT_FALLBACK_MODEL` | 被限流时切换的模型，付费模型会产生费用 |
+| `AGENT_EXTRA_BODY` | 传给模型接口的附加参数（JSON） |
+| `WEB_SEARCH_URL` / `WEB_SEARCH_ENGINE` | 联网搜索服务地址和引擎，不配置时不显示开关 |
 | `REPORTAGENT_COOKIE_SECURE` | HTTPS 环境设为 `1` |
 | `REPORTAGENT_CHAT_PER_HOUR` | 每位访客每小时提问上限，默认 30 |
 | `REPORTAGENT_REPORTS_PER_HOUR` | 每位访客每小时报告上限，默认 30 |
 | `REPORTAGENT_WEB_PER_HOUR` | 每位访客每小时开启联网的提问上限，默认 10 |
-| `WEB_SEARCH_API_KEY` | 联网搜索密钥，不设置时用 `LLM_API_KEY`。搜索按次计费 |
+| `WEB_SEARCH_API_KEY` | 联网搜索密钥，不设置时用 `AGENT_API_KEY`。可能按次计费 |
 
 ## 开发
 

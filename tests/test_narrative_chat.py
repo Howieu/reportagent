@@ -122,10 +122,10 @@ def test_llm_falls_back_only_on_rate_limit(monkeypatch):
             raise RateLimitError
         return NS(choices=[NS(message=NS(content="ok"))])
 
-    monkeypatch.setenv("LLM_FALLBACK_MODEL", "backup")
+    monkeypatch.setenv("AGENT_FALLBACK_MODEL", "backup")
     client = NS(chat=NS(completions=NS(create=create)))
     assert LLM(client=client, model="primary").chat([]).content == "ok" and used == ["primary", "backup"]
-    monkeypatch.delenv("LLM_FALLBACK_MODEL")
+    monkeypatch.delenv("AGENT_FALLBACK_MODEL")
     import pytest
     with pytest.raises(RateLimitError):
         LLM(client=client, model="primary").chat([])
@@ -180,6 +180,28 @@ def test_web_search_failure_degrades_without_crash(demo_app, monkeypatch):
     monkeypatch.setattr(tools, "search_web", boom)
     ev = run(demo_app, [call("web_search", {"query": "趋势"}), text("没有查到外部信息。")], q="行业趋势", web=True)
     assert [e for e in ev if e.get("status") == "retry"] and ev[-1]["type"] == "answer"
+
+
+def test_agent_settings_come_only_from_environment(monkeypatch):
+    from reportagent.narrative import LLM
+    from reportagent.tools import web_search_enabled
+    for name in ("AGENT_MODEL", "AGENT_API_KEY", "WEB_SEARCH_URL", "WEB_SEARCH_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert not LLM().enabled and not web_search_enabled()  # 代码里没有默认模型或默认服务商
+    seen = {}
+
+    def create(**kwargs):
+        seen.update(kwargs)
+        return NS(choices=[NS(message=NS(content="ok"))])
+
+    monkeypatch.setenv("AGENT_EXTRA_BODY", '{"a": 1}')
+    monkeypatch.setenv("WRITER_AGENT_MODEL", "writer")
+    llm = LLM(client=NS(chat=NS(completions=NS(create=create))), model="main")
+    llm.chat([])
+    assert seen["extra_body"] == {"a": 1}
+    seen.clear()
+    llm.write([])
+    assert seen["model"] == "writer" and "extra_body" not in seen
 
 
 def test_no_llm_chat_explains(demo_app):

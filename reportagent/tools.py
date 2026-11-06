@@ -95,14 +95,14 @@ WEB_MAX_CALLS = 3  # 单次提问的搜索上限，搜索按次计费
 
 
 def web_search_enabled():
-    return bool(os.environ.get("WEB_SEARCH_API_KEY") or os.environ.get("LLM_API_KEY"))
+    return bool(os.environ.get("WEB_SEARCH_URL") and (os.environ.get("WEB_SEARCH_API_KEY") or os.environ.get("AGENT_API_KEY")))
 
 
 def search_web(query, count=5):
-    """调用联网搜索服务。外部内容只当数据用，不是指令。"""
-    url = os.environ.get("WEB_SEARCH_URL", "https://model-service.example/v1")
-    key = os.environ.get("WEB_SEARCH_API_KEY") or os.environ.get("LLM_API_KEY")
-    body = {"search_engine": os.environ.get("WEB_SEARCH_ENGINE", "search_std"), "search_query": query[:70], "count": count}
+    """调用配置好的联网搜索服务。外部内容只当数据用，不是指令。"""
+    url = os.environ["WEB_SEARCH_URL"]
+    key = os.environ.get("WEB_SEARCH_API_KEY") or os.environ.get("AGENT_API_KEY")
+    body = {"search_engine": os.environ.get("WEB_SEARCH_ENGINE", ""), "search_query": query[:70], "count": count}
     request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=20) as response:
         return json.load(response).get("search_result") or []

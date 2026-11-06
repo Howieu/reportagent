@@ -331,15 +331,15 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
   const s = useMemo(() => fold(events), [events]);
   const [feedback, setFeedback] = useState(null);
   const pending = s.tasks.filter((t) => t.status === 'running').length;
-  const status = s.thinking ? '正在思考' : pending ? '正在取数' : '正在整理结论';
+  const status = s.thinking ? '辅助思考 Agent 正在思考' : pending ? '正在执行工具' : '意图识别 Agent 正在处理';
   return (
     <div className="msg-bot">
       <div className="bot-orb" aria-hidden="true">{live ? <FluidAgentOrb preset="monochrome" state={s.thinking ? 'thinking' : 'searching'} style={{ width: 24, height: 24 }} animateEntrance={false} /> : <Logo size={22} />}</div>
       <div className="bot-body">
         {s.notices.map((n) => <p className="warn" key={n}>{n}</p>)}
-        {s.rewrite && <div className="step-note">已理解为：{s.rewrite}</div>}
+        {s.rewrite && <div className="step-note">问题改写 Agent 理解为：{s.rewrite}</div>}
         {s.matched && <div className="step-note">从问答库匹配到相似问题：{s.matched}</div>}
-        {s.thought && <Collapsible title="思考完成"><div className="thought">{s.thought}</div></Collapsible>}
+        {s.thought && <Collapsible title="辅助思考 Agent 已完成"><div className="thought">{s.thought}</div></Collapsible>}
         {s.tasks.length > 0 && (
           <Collapsible key={live ? 'live' : 'done'} defaultOpen={live}
             title={pending ? `拆解为 ${s.tasks.length} 个任务，正在执行（${s.tasks.length - pending}/${s.tasks.length}）` : `已完成 ${s.tasks.length} 个任务`}>
@@ -400,7 +400,6 @@ function Composer({ meta, busy, assist, onAssist, web, onWeb, onSend, onStop, on
         )}
         <span className="tray-item">{meta?.name || '连接数仓中'}</span>
         {meta?.synthetic && <span className="badge">模拟数据</span>}
-        {meta?.model && <span className="tray-item model">{meta.model}</span>}
       </div>
       <div className="box">
         <textarea ref={box} rows={1} value={text} placeholder="问问数据，或者让我生成周报、看漏斗" aria-label="输入问题" onChange={(e) => setText(e.target.value)}

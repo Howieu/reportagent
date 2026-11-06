@@ -1,8 +1,11 @@
 """文字层：规则模板打底，LLM 只负责润色；校验不过就退回模板。"""
 
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
+
+from .agents import WRITER_AGENT
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 LIST_PREFIX = re.compile(r"^\s*\d+[.、]\s*", re.MULTILINE)
@@ -65,28 +68,30 @@ FACTOR_NAMES = {"traffic": "Traffic", "cr": "CR", "ai": "AI", "price": "Price/it
 
 
 class LLM:
-    """OpenAI 兼容接口。未配置 Key 时 enabled 为 False，调用方走模板。"""
+    """各 Agent 共用的模型客户端，接口兼容 OpenAI。模型和地址都来自环境变量，未配置时调用方走规则模板。"""
 
     def __init__(self, client=None, model=None):
-        self.model = model or os.environ.get("LLM_MODEL", "agent-model")
-        self.text_model = os.environ.get("LLM_TEXT_MODEL") or self.model
-        self.fallback = os.environ.get("LLM_FALLBACK_MODEL") or None
+        self.model = model or os.environ.get("AGENT_MODEL") or ""
+        self.text_model = os.environ.get("WRITER_AGENT_MODEL") or self.model
+        self.fallback = os.environ.get("AGENT_FALLBACK_MODEL") or None
+        self.extra_body = json.loads(os.environ.get("AGENT_EXTRA_BODY") or "{}")
         self.client = client
-        key = os.environ.get("LLM_API_KEY")
-        if client is None and key:
+        key = os.environ.get("AGENT_API_KEY")
+        if client is None and key and self.model:
             from openai import OpenAI
 
-            self.client = OpenAI(api_key=key, base_url=os.environ.get("LLM_BASE_URL"), timeout=60, max_retries=4)
+            self.client = OpenAI(api_key=key, base_url=os.environ.get("AGENT_BASE_URL"), timeout=60, max_retries=4)
 
     @property
     def enabled(self):
         return self.client is not None
 
     def chat(self, messages, tools=None, temperature=0.2, max_tokens=900, model=None):
+        """问题改写、辅助思考、意图识别、回答修正 Agent 走这里。"""
         model = model or self.model
         kwargs = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
-        if model.startswith("agent-model") and "flash-" not in model:
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}  # 关掉模型思考，降低延迟
+        if self.extra_body and (model != self.text_model or self.text_model == self.model):
+            kwargs["extra_body"] = self.extra_body
         if tools:
             kwargs["tools"] = tools
         try:
@@ -97,7 +102,7 @@ class LLM:
             raise
 
     def write(self, messages):
-        """润色文字不需要调工具，用更稳定的模型，不和对话抢额度。"""
+        """报告撰写 Agent：不需要调工具，可以单独配置模型，不和对话抢额度。"""
         return self.chat(messages, model=self.text_model)
 
 
@@ -294,7 +299,7 @@ def _write(key, r, semantic, llm):
         problem = "不是 4 条"
     if problem:
         return {"text": fallback, "mode": "模板", "note": problem}
-    return {"text": text, "mode": llm.text_model}
+    return {"text": text, "mode": WRITER_AGENT}
 
 
 def write_sections(report, semantic, llm=None):
