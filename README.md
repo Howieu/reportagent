@@ -41,7 +41,25 @@ semantic.yaml（表和字段的映射）
 
 校验拦不住所有语义错误，重要结论仍要对照表格。
 
-完整链路见 [架构与链路图](docs/architecture.html)，包括追问改写、辅助思考和联网开关的各种走法。
+### 架构图
+
+**系统分层**
+
+![系统分层：入口、服务、编排、能力、外部依赖](docs/architecture/1-overview.png)
+
+**提问进入：解析、改写和辅助思考**
+
+![提问进入模型前的链路](docs/architecture/2-query.png)
+
+**意图识别与工具：什么时候调用什么**
+
+![意图识别 Agent 与工具循环](docs/architecture/3-tools.png)
+
+**形成报告：两个入口，一条流水线**
+
+![报告生成链路](docs/architecture/4-report.png)
+
+Agent 分工表和 18 种情况的走法对照见 [完整版](docs/architecture.html)（下载后用浏览器打开）。
 
 ## 快速开始
 
