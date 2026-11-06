@@ -1,0 +1,46 @@
+[project]
+name = "reportagent"
+version = "0.2.0"
+description = "连上零售数仓，直接产出周度业绩诊断报告"
+requires-python = ">=3.11"
+dependencies = [
+  "sqlalchemy>=2.0,<2.1",
+  "pandas>=2.2",
+  "pyyaml>=6",
+  "jinja2>=3.1",
+  "openai>=1.60",
+  "duckdb>=1.1",
+  "duckdb-engine>=0.13",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+mysql = ["pymysql>=1.1"]
+maxcompute = ["pyodps>=0.12"]
+dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27"]
+
+[project.scripts]
+reportagent = "reportagent.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["reportagent"]
+
+[tool.setuptools.package-data]
+reportagent = ["*.j2", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 130
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]

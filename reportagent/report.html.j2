@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ r.store_name }} {{ r.category }} wk{{ r.week }} 经营分析报告</title>
+<style>{% include "report_base.css.j2" %}</style>
+</head>
+<body>
+<main>
+{% set n = r.tree.nodes %}{% set L = r.labels %}{% set d = r.drill %}
+{% set has_goal = r.overall.week.sales_vs_goal is not none %}
+{% set m = 'Sales' if r.focus == 'sales' else 'Qty' %}{% set unit = (r.focus == 'sales') %}
+{% set c = namespace(table=0, figure=0) %}
+{% macro source(extra='') %}<p class="source">数据来源：{{ r.source }}，代码计算。{{ extra }}</p>{% endmacro %}
+
+{% if r.synthetic %}<div class="synthetic">本报告使用合成数据，仅用于产品演示，不代表任何公司的真实经营情况。</div>{% endif %}
+<h1>{{ r.store_name }} {{ r.category }} 周度经营分析报告</h1>
+<p class="meta-line">报告周期：第 {{ r.week }} 周（{{ r.period.week.start }} 至 {{ r.period.week.end }}）　数据截至：{{ r.latest_date }}　生成时间：{{ generated }}</p>
+<hr class="head-rule">
+
+<h2>摘要</h2>
+<div class="summary">{% for line in s.summary.text.split('\n') if line.strip() %}<p>{{ line | rich }}</p>{% endfor %}</div>
+{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　{{ r.channel }}核心指标（本周）</div>
+<div class="scroll"><table>
+  <tr><th>指标</th><th>本周</th><th>去年同期</th><th>vs LY</th><th>与对标差</th><th>周环比</th></tr>
+  {% for key in ['sales','tickets','ab','ai','price','traffic','cr','qty'] if key in n %}{% set x = n[key] %}
+  <tr><td>{{ node_labels[key] }}</td>
+    <td>{% if key == 'cr' %}{{ '%.1f%%' | format((x.ty or 0) * 100) }}{% elif key in ['sales','ab','price'] %}{{ x.ty | money }}{% elif key == 'ai' %}{{ '%.2f' | format(x.ty or 0) }}{% else %}{{ x.ty | num }}{% endif %}</td>
+    <td>{% if key == 'cr' %}{{ '%.1f%%' | format((x.ly or 0) * 100) }}{% elif key in ['sales','ab','price'] %}{{ x.ly | money }}{% elif key == 'ai' %}{{ '%.2f' | format(x.ly or 0) }}{% else %}{{ x.ly | num }}{% endif %}</td>
+    <td>{{ x.vs_ly | delta }}</td><td>{{ x.vs_comp | gap }}</td><td>{{ x.wow | gap }}</td></tr>
+  {% endfor %}
+</table></div>
+{{ source('vs LY 为与去年同期之比，100 表示持平；周环比为与上周相比的变化（百分点）。') }}
+
+<h2>一、{{ titles.overall }}</h2>
+<p class="lead">{{ s.overall.text | rich }}</p>
+{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　整体销售表现</div>
+<div class="scroll"><table>
+  <tr><th>时段</th><th>Sales</th>{% if has_goal %}<th>vs Goal</th>{% endif %}<th>vs LY</th><th>与对标差</th><th>Qty vs LY</th><th>占全部{{ L.store }}</th><th>排名</th><th>与前一名差距</th></tr>
+  {% for key, name in [('week','本周'),('r4','滚动 4 周'),('ytd','财年累计')] %}{% set o = r.overall[key] %}
+  <tr><td>{{ name }}</td><td>{{ o.sales | money }}</td>{% if has_goal %}<td>{{ o.sales_vs_goal | delta }}</td>{% endif %}<td>{{ o.sales_vs_ly | delta }}</td>
+  <td>{{ (o.sales_vs_ly - o.sales_vs_ly_comp) | gap if o.sales_vs_ly is not none and o.sales_vs_ly_comp is not none else '—' }}</td>
+  <td>{{ o.qty_vs_ly | delta }}</td><td>{{ '%.1f%%' | format(o.share) if o.share is not none else '—' }}</td>
+  <td>{{ o.rank }} / {{ o.peer_count }}</td><td>{{ (o.prev_store ~ ' ' ~ (o.prev_gap | money)) if o.prev_store else '第一名' }}</td></tr>
+  {% endfor %}
+</table></div>
+{{ source() }}
+{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　{{ r.store_name }}品类结构（本周）</div>
+<div class="scroll"><table>
+  <tr><th>品类</th><th>Sales</th><th>占比</th><th>vs LY</th></tr>
+  {% for x in r.mix %}<tr class="{{ 'total' if x.selected }}"><td>{{ x.name }}</td><td>{{ x.sales | money }}</td><td>{{ '%.1f%%' | format(x.share) }}</td><td>{{ x.sales_vs_ly | delta }}</td></tr>{% endfor %}
+</table></div>
+{{ source('加粗行为本报告分析的品类。') }}
+
+<h2>二、{{ titles.channel }}</h2>
+<p class="lead">{{ s.channel.text | rich }}</p>
+{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　分{{ L.channel }}表现（本周）</div>
+<div class="scroll"><table>
+  <tr><th>{{ L.channel }} / {{ L.subchannel }}</th><th>Sales</th><th>占比</th>{% if has_goal %}<th>vs Goal</th>{% endif %}<th>vs LY</th><th>与对标差</th><th>Qty vs LY</th><th>排名</th></tr>
+  {% for x in r.channels %}
+  <tr class="total"><td>{{ x.channel }}</td><td>{{ x.sales | money }}</td><td>{{ '%.1f%%' | format(x.share) }}</td>{% if has_goal %}<td>{{ x.sales_vs_goal | delta }}</td>{% endif %}<td>{{ x.sales_vs_ly | delta }}</td>
+  <td>{{ (x.sales_vs_ly - x.sales_vs_ly_comp) | gap if x.sales_vs_ly is not none and x.sales_vs_ly_comp is not none else '—' }}</td><td>{{ x.qty_vs_ly | delta }}</td><td>{{ x.rank }}</td></tr>
+  {% for y in x.subs %}<tr><td class="l2">{{ y.name }}</td><td>{{ y.sales | money }}</td><td>{{ '%.1f%%' | format(y.share) }}</td>{% if has_goal %}<td>—</td>{% endif %}<td>{{ y.sales_vs_ly | delta }}</td><td>—</td><td>{{ y.qty_vs_ly | delta }}</td><td>—</td></tr>{% endfor %}
+  {% endfor %}
+</table></div>
+{{ source() }}
+
+<h2>三、{{ titles.tree }}</h2>
+<p class="lead">{{ s.tree.text | rich }}</p>
+<p class="note">拆解公式：Sales = {% if 'traffic' in n %}Traffic × CR{% else %}Trans{% endif %} × AI × Price/item。</p>
+{% set c.figure = c.figure + 1 %}
+<div class="caption">图 {{ c.figure }}　Sales 同比变化的因素贡献</div>
+{{ r.tree.contributions | bars }}
+{{ source('对数分解，各项相加等于 100%。正值与 Sales 变化同向，负值反向。') }}
+{% set c.figure = c.figure + 1 %}
+<div class="caption">图 {{ c.figure }}　近 4 周各指标 vs LY 走势</div>
+<div class="small-multiples">
+  {% for key in ['sales','traffic','cr','tickets','ab','ai','price','qty'] if key in n %}
+  <div><b>{{ node_labels[key] }}</b>　{{ n[key].vs_ly | delta }}{{ r.tree.trend[key] | spark }}</div>
+  {% endfor %}
+</div>
+{{ source() }}
+
+<h2>四、{{ titles.drill }}</h2>
+{% macro chg(v) %}{{ (v | money) if unit else (v | num) }}{% endmacro %}
+{% macro row(x, cls, name) %}<tr><td class="{{ cls }}">{{ name }}</td><td>{{ x.vs_ly | delta }}</td><td>{{ x.vs_comp | gap }}</td><td>{{ x.vs_r4 | gap }}</td><td>{{ chg(x.dif) }}</td><td>{{ chg(x.dif_other) }}</td><td>{{ (x.contribution | fi) ~ '%' if x.contribution is not none else '—' }}</td><td class="wrap">{{ x.note_text }}</td></tr>{% endmacro %}
+{% if d.has_exclusion %}<p class="note">变化额和排序按排除新品后的同口径计算，所以指数高于 100 的对象也可能出现在下降方向。</p>{% endif %}
+{% for key, title in [('up', '同口径上升'), ('down', '同口径下降')] %}
+{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　{{ r.channel }} {{ m }} {{ title }}的主要{{ L.subcategory }}（{{ L.subcategory }} → {{ L.family }} → {{ L.item }}）</div>
+{% if d[key] %}
+<div class="scroll"><table>
+  <tr><th>对象</th><th>vs LY</th><th>与对标差</th><th>较 4 周</th><th>变化额</th><th>其他{{ L.channel }}变化</th><th>贡献</th><th style="text-align:left">备注</th></tr>
+  {% for sub in d[key] %}
+    {{ row(sub, 'l1', sub.name) }}
+    {% for f in sub.families %}
+      {{ row(f, 'l2', f.name) }}
+      {% for i in f['items'] %}{{ row(i, 'l3', i.name) }}{% endfor %}
+    {% endfor %}
+    {% for i in sub.others %}{{ row(i, 'l3', i.name) }}{% endfor %}
+  {% endfor %}
+</table></div>
+{{ source() }}
+{% else %}<p class="note">本周没有{{ L.subcategory }}处于这个方向。</p>{% endif %}
+{% endfor %}
+{% if d.segments %}{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　商品分组表现</div>
+<div class="scroll"><table><tr><th>分组</th><th>占比</th><th>Sales vs LY</th><th>Qty vs LY</th></tr>
+{% for g in d.segments %}<tr><td>{{ g.name }}</td><td>{{ '%.1f%%' | format(g.share) if g.share is not none else '—' }}</td><td>{{ g.sales_vs_ly | delta }}</td><td>{{ g.qty_vs_ly | delta }}</td></tr>{% endfor %}</table></div>
+{{ source() }}{% endif %}
+
+<h2>五、{{ titles.region }}</h2>
+{% set c.table = c.table + 1 %}
+<div class="caption">表 {{ c.table }}　{{ r.category }}分区域表现（全部{{ L.channel }}）</div>
+<div class="scroll"><table>
+  <tr><th>区域</th><th>Sales</th><th>vs LY</th>{% if has_goal %}<th>vs Goal</th><th>与目标差额</th>{% endif %}<th>Trans</th><th>Trans vs LY</th><th>AB</th><th>AB vs LY</th></tr>
+  {% for x in r.regions %}<tr class="{{ 'total' if x.level == 'total' }}"><td>{{ x.name }}</td><td>{{ x.sales | money }}</td><td>{{ x.sales_vs_ly | delta }}</td>{% if has_goal %}<td>{{ x.sales_vs_goal | delta }}</td><td>{{ x.goal_gap | money }}</td>{% endif %}<td>{{ x.trans | num }}</td><td>{{ x.trans_vs_ly | delta }}</td><td>{{ x.ab | money }}</td><td>{{ x.ab_vs_ly | delta }}</td></tr>{% endfor %}
+</table></div>
+{{ source() }}
+
+<h2>六、后续关注</h2>
+{% if follow_ups %}<ol class="plain">{% for f in follow_ups %}<li>{{ f }}</li>{% endfor %}</ol>{% else %}<p>本周没有规则识别出的高潜力{{ L.item }}。</p>{% endif %}
+<p class="note">以上由规则识别，用于提示排查方向，不代表因果结论。</p>
+
+<h2>附：口径与方法</h2>
+<ul class="plain note">
+  {% if r.data_note %}<li>{{ r.data_note }}</li>{% endif %}
+  <li>vs LY = 本期 ÷ 去年同期 × 100，去年同期按 364 天对齐星期；去年基数 ≤ 0 时显示“—”。</li>
+  <li>对标为同组其他{{ L.store }}合计（同组共 {{ r.peers }} 个）；与对标差为本对象指数减去对标指数。</li>
+  <li>AB = Sales ÷ Trans；AI = Qty ÷ Trans；Price/item = Sales ÷ Qty{% if 'cr' in n %}；CR = Trans ÷ Traffic{% endif %}。</li>
+  <li>下钻按贡献度截断：{{ L.subcategory }}累计 90%，{{ L.family }}累计 70%；潜力判断为规则结果。</li>
+  <li>文字来源：{% for k, label in [('summary','摘要'),('overall','整体'),('channel',L.channel),('tree','驱动拆解')] %}{{ label }}={{ s[k].mode }}{% if s[k].note %}（{{ s[k].note }}）{% endif %}{{ '，' if not loop.last }}{% endfor %}。所有数字由代码计算。</li>
+</ul>
+{% if queries %}<details><summary>查看本报告执行的 {{ queries | length }} 条 SQL</summary>{% for q in queries %}<p><b>{{ q.purpose }}</b>（{{ q.rows }} 行，{{ q.ms }} ms）</p><pre>{{ q.sql }}</pre>{% endfor %}</details>{% endif %}
+</main>
+</body>
+</html>

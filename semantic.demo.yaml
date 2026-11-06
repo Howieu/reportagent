@@ -1,0 +1,109 @@
+# 美妆零售演示数仓的语义配置（数据全部为合成）。
+# 换成真实数仓时，把表名和字段名改成你的即可；可选数据源删掉后相应指标不显示。
+name: 美妆零售演示数仓
+synthetic: true   # 数据为合成时必须保留：界面和报告都会显示“模拟数据”
+branding:
+  name: ReportAgent
+  product: ChatBI
+  primary: "#000000"
+  primary_text: "#ffffff"
+  accent: "#c8102e"
+calendar:
+  fiscal_year_start_month: 1
+  ly_shift_days: 364
+  # date_format: "%Y%m%d"   # 日期存成字符串时填写，例如 MaxCompute 常见的 20251103
+defaults:
+  channel: RETAIL
+  focus: sales
+labels:
+  store: 门店
+  category: 品类
+  subcategory: 子类
+  family: 品牌
+  item: SKU
+sources:
+  sales:
+    table: fact_sales
+    date: biz_date
+    store: store_id
+    channel: channel
+    subchannel: subchannel
+    category: category
+    subcategory: subcategory
+    family: brand
+    item: item_id
+    sales: net_sales
+    qty: qty
+    ticket: order_id
+  goals:
+    table: fact_goal
+    date: week_start
+    store: store_id
+    category: category
+    channel: channel
+    sales_goal: sales_goal
+  traffic:
+    table: fact_traffic
+    date: biz_date
+    store: store_id
+    channel: channel
+    visitors: visitors
+  items:
+    table: dim_item
+    item: item_id
+    name: item_name
+    exclude_flag: is_new
+    segments:
+      主推款: is_hero
+      会员专享: is_member_exclusive
+  stores:
+    table: dim_store
+    store: store_id
+    name: store_name
+    peer_group: peer_group
+    region: region
+    city: city
+  availability:
+    table: fact_availability
+    date: week_start
+    store: store_id
+    item: item_id
+    available_pct: available_pct
+synonyms:
+  护肤: SKINCARE
+  彩妆: MAKE UP
+  香水: FRAGRANCE
+  美发: HAIR
+  线下: RETAIL
+  线上: ONLINE
+glossary:
+  - "Sales：销售金额。AB：客单价，Sales / Trans。AI：客件数，Qty / Trans。UPT 同 AI。"
+  - "Trans：成交单数。Traffic：进店或访问人数。CR：转化率，Trans / Traffic。"
+  - "vs LY：与去年同期之比，100 表示持平。vs Goal：与目标之比。"
+constraints:
+  - "门店没有商品定价权，不要建议调整价格；可以建议优化商品结构、陈列或导购话术。"
+banned_phrases:
+  - 调整定价
+  - 优化定价
+  - 降价
+verified_questions:
+  - question: 上周上海静安店护肤品卖得怎么样
+    tool: generate_report
+    args: {store: S01, category: SKINCARE}
+  - question: 上周各品类销售额和同比
+    tool: query_metrics
+    args: {metrics: [sales, sales_vs_ly], dimensions: [category]}
+  - question: 上周销售额最高的 10 个 SKU
+    tool: query_metrics
+    args: {metrics: [sales, qty], dimensions: [item], order_by: sales, limit: 10}
+  - question: 近 12 周华东区销售趋势
+    tool: query_metrics
+    args: {metrics: [sales], dimensions: [week], filters: {region: 华东}, last_weeks: 12}
+  - question: 上海静安店护肤上周为什么涨或跌
+    tool: explain_change
+    args: {store: S01, category: SKINCARE}
+examples:
+  - {type: 基础统计, text: 上周各品类的销售额和同比}
+  - {type: TOP-N 分析, text: 上周 SKINCARE 销售额最高的 10 个 SKU}
+  - {type: 情况概览, text: 上海静安店 SKINCARE 上周为什么涨了}
+  - {type: 趋势分析, text: 近 12 周华东区销售额趋势}

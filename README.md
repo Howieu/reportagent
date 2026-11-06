@@ -1,222 +1,202 @@
-# 智能业绩诊断 Agent — 产品 Demo
+# ReportAgent
 
-> 把门店商业团队 **4 小时** 的周报工作压缩到 **1 分钟**。
-> 源自真实业务场景的自动化数分报告系统的产品化重构：数仓统一口径 · 规则+LLM 双引擎 · ML 归因与预测。
+ReportAgent 连接零售数仓，让业务同学用对话查数，或者选好门店、品类和周次，直接生成一份可下载的周度诊断报告。
 
-![Python](https://img.shields.io/badge/Python-3.12-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-App-red) [![test](https://github.com/Howieu/reportagent/actions/workflows/test.yml/badge.svg)](https://github.com/Howieu/reportagent/actions/workflows/test.yml)
+报告和表格里的数字都由代码计算。模型只写文字，写出的内容还要通过校验。
 
-## 在线访问
+**在线体验：** [Vercel](https://reportagent.vercel.app) · [Render](https://reportagent-api.onrender.com)
 
-| 入口 | 地址 | 说明 |
-|---|---|---|
-| **固定域名落地页** | `https://reportagent.vercel.app`（Vercel） | 项目介绍 + 内嵌交互 Demo |
-| **Streamlit 直达** | `https://ikea-report-agent.streamlit.app` | 交互应用本体（空闲会休眠，打开后稍等唤醒） |
-| **GitHub 源码** | `https://github.com/Howieu/reportagent` | 代码、测试与部署配置 |
+线上数据来自公开数据集：报告用 Olist 巴西电商订单（2017-01 至 2018-08），漏斗用 RetailRocket 行为日志（2015 年）。两者来自不同公司，产品里分开展示，不互相换算。
 
-> 落地页由 Vercel 从 `site/` 目录自动部署（Root Directory = `site`，无构建步骤），
-> push 到 main 即自动发布。Streamlit 应用空闲休眠时，可通过落地页「新窗口打开」唤醒。
+## 功能
 
-## 一分钟了解
+| 功能 | 说明 |
+|---|---|
+| 对话问数 | 统计、排名、趋势和归因。回答附表格、图表和实际执行的 SQL |
+| 诊断报告 | 摘要 → 整体 → 渠道 → 销售树 → 子类 → 品牌 → 商品 → 区域，可导出 PDF |
+| 漏斗分析 | 浏览 → 加购 → 成交，可选维度并逐级下钻 |
+| 项目管理 | 按项目组织任务，对话和报告都归在任务里 |
+| 联网搜索 | 输入框的开关，默认关闭。打开后可查外部公开信息，回答附来源 |
+| 追问改写 | 问题改写 Agent 把依赖上下文的追问改成独立问题，并在回答里展示 |
+| 批量生成 | 命令行批量导出 HTML 和 PDF，可接入定时任务 |
 
-- **用户与场景**：零售门店店长 / 商业团队，每周一上午对每个 HFB（高层级商品分类）做业绩复盘。
-- **痛点**：跨 ONLINE/OFFLINE 多渠道、跨 HFB→PA→Family→Article 四层级读数十个指标，再人工归因写结论，单份周报约 4 小时，且不同分析师口径不一。
-- **方案**：五层诊断流水线，一键生成"业绩总结 + 渠道分析 + Sales Tree 漏斗 + 异动商品归因（含 ML 归因、销量预测、潜力商品标记）"的结构化周报。
-- **Demo 亮点**：交互式生成、离线可演示（无 LLM Key 时规则模板兜底）、全部数据为仿真数据。
+## 工作原理
+
+```text
+semantic.yaml（表和字段的映射）
+        ↓
+代码生成 SQL，在数仓里聚合
+        ↓
+确定性分析：同比、对标、销售树分解、下钻、潜力规则
+        ↓
+模型组织文字 → 校验不过就改用规则文字
+        ↓
+工作台 / HTML / PDF
+```
+
+- **模型不写 SQL：** 意图识别 Agent 只能调用固定工具并传结构化参数。筛选值会先对应到数仓里的真实取值。
+- **Agent 按职责划分：** 问题改写、辅助思考、意图识别、回答修正和报告撰写 Agent，模型和服务商都由环境变量配置。
+- **文字要过校验：** 出现数据里没有的数字、把指数写成增幅、涨跌方向明显写反或命中禁用词时，会退回规则文字。
+- **没有的数据不编造：** 没配置目标、客流或库存表时，相关指标不显示。
+
+校验拦不住所有语义错误，重要结论仍要对照表格。
+
+完整链路见 [架构与链路图](docs/architecture.html)，包括追问改写、辅助思考和联网开关的各种走法。
 
 ## 快速开始
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-跑测试 / lint（需要开发依赖，CI 用同一套）：
+需要 Python 3.11+、Node.js 和 [uv](https://docs.astral.sh/uv/)。下面用合成数据运行，不需要模型密钥，但对话功能要配置密钥后才能用。
 
 ```bash
-pip install -r requirements-dev.txt
-ruff check .
-python -m pytest
+uv venv --python 3.12 .venv
 ```
 
-打开浏览器后：左侧选 **门店 / HFB（支持 `1-3,7` 形式）/ 周次** → 点击 **生成报告** → 页面内渲染完整报告，可下载 HTML。
+```bash
+uv pip install -e ".[dev]" --python .venv/bin/python
+```
 
-**可选：启用 LLM 润色**（不配置也能完整演示，系统自动降级为规则模板）：
+```bash
+(cd web && npm ci && npm run build)
+```
 
-- 方式一：页面侧边栏「文本生成方式」选择 OpenAI 兼容服务或 Anthropic，填入 Key / 模型即可
-  （Key 仅保存在当前浏览器会话，不写入文件、日志、URL 或报告）；
-- 方式二：`cp .env.example .env`，填入 `LLM_API_KEY / LLM_BASE_URL / LLM_MODEL`。
+```bash
+.venv/bin/reportagent demo
+```
 
-## 部署架构
+```bash
+REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb .venv/bin/reportagent --semantic semantic.demo.yaml serve
+```
+
+打开 <http://127.0.0.1:8501>。合成数据的界面和报告都会显示明确标记。
+
+要启用对话，复制 `.env.example` 为 `.env`，填写 `AGENT_API_KEY`、`AGENT_BASE_URL` 和 `AGENT_MODEL`。接口需要兼容 OpenAI，模型需要支持工具调用。`.env.example` 默认指向真实公开数据，用合成数据时要保留上面命令里的连接设置。
+
+### 使用公开数据
+
+从 Kaggle 下载 [Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) 和 [RetailRocket](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)，分别解压到 `data/raw/olist` 和 `data/raw/retailrocket`，然后导入：
+
+```bash
+.venv/bin/reportagent load-real
+```
+
+```bash
+REPORTAGENT_DB_URL=duckdb:///data/real.duckdb .venv/bin/reportagent --semantic semantic.real.yaml serve
+```
+
+Olist 没有实体门店和销售渠道，这里用最接近的真实字段映射：门店对应卖家所在州，渠道对应同州或跨州配送，品牌对应卖家。
+
+## 接入自己的数仓
+
+**1. 写语义配置。** 只有销售事实表必填：
+
+```yaml
+name: 我的零售数仓
+sources:
+  sales:
+    table: dwd.fact_sales
+    date: biz_date
+    store: store_id
+    channel: channel
+    category: category
+    subcategory: subcategory
+    family: brand
+    item: item_id
+    sales: net_sales
+    qty: qty
+    ticket: order_id
+```
+
+目标、客流、商品、门店、库存和漏斗都是可选数据源。完整写法见 [semantic.demo.yaml](semantic.demo.yaml) 和 [semantic.real.yaml](semantic.real.yaml)。日期存成字符串时，在 `calendar.date_format` 里写明格式。
+
+**2. 配置连接。** 建议使用只读账号：
+
+| 数仓 | `REPORTAGENT_DB_URL` | 验证情况 |
+|---|---|---|
+| DuckDB | `duckdb:///data/my.duckdb` | 已运行 |
+| Postgres | `postgresql+psycopg://user:pass@host:5432/db` | 已在 Supabase 运行 |
+| MySQL | `mysql+pymysql://user:pass@host:3306/db` | 仅编译过 SQL，需安装 `.[mysql]` |
+| MaxCompute | `odps://ACCESS_ID:SECRET@PROJECT/?endpoint=ENDPOINT` | 仅编译过 SQL，需安装 `.[maxcompute]` |
+
+**3. 检查字段映射：**
+
+```bash
+.venv/bin/reportagent --semantic my.yaml check
+```
+
+## 命令行
+
+```bash
+.venv/bin/reportagent --semantic semantic.real.yaml report --store SP,RJ --category all --week 201834 --out reports
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--store` / `--category` | 逗号分隔，或写 `all` |
+| `--week` | ISO 周次 `YYYYWW`，默认最近完整周 |
+| `--channel` / `--focus` | 下钻渠道；分析指标 `sales` 或 `qty` |
+| `--no-llm` | 只用规则文字，不调用模型 |
+| `--no-pdf` | 只输出 HTML。生成 PDF 需要本机有 Chrome 或 Chromium |
+
+## 部署
+
+Render 和 Vercel 是两种独立的部署方式，任选其一都能运行完整产品。线上两个站点共用一个 Supabase 项目。
+
+| | Render | Vercel |
+|---|---|---|
+| 配置 | `Dockerfile` | `app.py` + `vercel.json` |
+| PDF | 服务端用 Chromium 生成 | 浏览器打印窗口存储为 PDF |
+| 启动 | 免费实例休眠后，首次打开可能要等一分钟左右 | 刚部署或闲置后，首次访问实测约 22 秒 |
+| 进程内状态 | 单实例 | 限流和缓存按实例计算，不是严格的全局限制 |
+
+数仓表放在 `warehouse` schema，会话和报告放在 `app` schema，都不在 Supabase API 默认暴露的 `public` 里。用 [`reportagent/push.py`](reportagent/push.py) 可以把本地 DuckDB 导入 Postgres，并创建只读账号和应用账号。
+
+| 环境变量 | 说明 |
+|---|---|
+| `REPORTAGENT_DB_URL` | 数仓连接，线上用只读账号 |
+| `REPORTAGENT_APP_DB_URL` | 会话和报告的存储库，不设置时用本地 SQLite |
+| `REPORTAGENT_SEMANTIC` | 语义配置文件 |
+| `AGENT_API_KEY` / `AGENT_BASE_URL` | Agent 模型的密钥和接口地址 |
+| `AGENT_MODEL` | 问题改写、辅助思考、意图识别、回答修正 Agent 的模型，必须支持工具调用 |
+| `WRITER_AGENT_MODEL` | 报告撰写 Agent 的模型，不设置时同 `AGENT_MODEL` |
+| `AGENT_FALLBACK_MODEL` | 被限流时切换的模型，付费模型会产生费用 |
+| `AGENT_EXTRA_BODY` | 传给模型接口的附加参数（JSON） |
+| `WEB_SEARCH_URL` / `WEB_SEARCH_ENGINE` | 联网搜索服务地址和引擎，不配置时不显示开关 |
+| `REPORTAGENT_COOKIE_SECURE` | HTTPS 环境设为 `1` |
+| `REPORTAGENT_CHAT_PER_HOUR` | 每位访客每小时提问上限，默认 30 |
+| `REPORTAGENT_REPORTS_PER_HOUR` | 每位访客每小时报告上限，默认 30 |
+| `REPORTAGENT_WEB_PER_HOUR` | 每位访客每小时开启联网的提问上限，默认 10 |
+| `WEB_SEARCH_API_KEY` | 联网搜索密钥，不设置时用 `AGENT_API_KEY`。可能按次计费 |
+
+## 开发
+
+```bash
+.venv/bin/python -m pytest
+```
+
+```bash
+.venv/bin/ruff check .
+```
+
+前端开发时运行 `cd web && npm run dev`，接口会转发到 `127.0.0.1:8501`。对公开数据的核对测试需要 `data/real.duckdb` 和原始 CSV，缺少时自动跳过。
 
 ```text
-reportagent.vercel.app
-        │
-        ▼
-Vercel（site/ 静态落地页，Git 集成自动部署）
-  项目背景 / 架构 / 个人贡献 / 隐私说明
-        │
-        ├── iframe: ikea-report-agent.streamlit.app/?embed=true（懒加载 + 骨架屏）
-        └── 新窗口打开 Streamlit（备用入口）
-                         │
-                         ▼
-              Streamlit Cloud（app.py）
-              Mock 数据 / 分析 / LLM / HTML 报告
+reportagent/   后端：语义配置、SQL 生成、分析、对话、报告模板、服务
+web/           前端：React 工作台
+tests/         测试：手算数据、演示数仓、公开数据核对
 ```
 
-- **Streamlit Cloud**：从 `app.py` 部署，固定易读的 `*.streamlit.app` 子域名；
-- **Vercel**：Git 集成连接本仓库，Root Directory 设为 `site/`，Framework=None、
-  无构建命令，push 到 main 自动发布；免费 `*.vercel.app` 子域名；
-- 不使用心跳绕过 Streamlit 休眠机制；若后续要求单一域名 / 持续在线，
-  将同一应用 Docker 化部署到 Render / Cloud Run，Vercel 侧绑定自有域名即可保持不变。
+## 已知限制
 
-## 方案架构：五层诊断流水线
+- 没有账号体系，靠随机 cookie 区分访客。清除 cookie 或换站点后，看不到原来的项目和任务。
+- 漏斗是同周期各步 UV 之比，不是同一用户的顺序路径。
+- 周次只支持 ISO 周，不支持自定义财年周历。
+- 第一版不做销量预测和 SHAP 归因。
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ ① 数仓层    5 张预聚合周表统一指标口径（ind.LY / Rolling 4wks）  │
-│             （Demo 中为 src/mock_data.py 生成的仿真数据）         │
-│ ② 文本化层  for_human / for_llm 双轨渲染                        │
-│             报告里的每个数字都只由代码计算（src/metrics.py）       │
-│ ③ 分析层    规则引擎 + LLM 两段式对话                             │
-│             业务词典 prompt → 完整分析 → 压缩为 ≤100 字结论        │
-│ ④ ML 层     SHAP 归因（影响 Sales 的前三指标）                    │
-│             7 天销量预测 · 潜力商品规则识别                        │
-│ ⑤ 渲染层    报告装配 → HTML（生产环境为 PDF + IM 推送）           │
-└─────────────────────────────────────────────────────────────┘
-```
+## 许可与致谢
 
-```mermaid
-flowchart TB
-    UI["用户输入：门店 / HFB（支持 1-3,7 批量）/ 周次 / 指标<br/>文本生成方式 / ML 开关（Streamlit 侧边栏）"]
+本项目暂未声明开源许可。第三方内容各有条款：
 
-    subgraph L1["① 数仓层 — 统一指标口径"]
-        direction LR
-        MDP["MockDataProvider<br/><code>data_provider.py</code>"]
-        MOCK["5 张预聚合周表<br/>确定性仿真数据（blake2b 派生种子）<br/><code>mock_data.py</code>"]
-        MDP --> MOCK
-    end
-
-    METRICS["② 文本化层（数字唯一入口）<br/>display_number / display_metrics · for_human / for_llm 双轨<br/><code>metrics.py</code>"]
-
-    subgraph L3["③ 分析层 — 规则引擎"]
-        direction LR
-        CH["渠道分析<br/>ONLINE / OFFLINE / 二级渠道<br/><code>analysis_channel.py</code>"]
-        FUN["DTC-RCMP 销售分析<br/>KPI + Sales Tree 漏斗（纯 HTML/CSS）<br/><code>analysis_funnel.py</code>"]
-        DRILL["异动商品归因<br/>PA → Family → Article 三级下钻<br/>+ 潜力商品规则引擎<br/><code>analysis_drilldown.py</code>"]
-    end
-
-    subgraph L4["④ ML 层 — 归因与预测（可开关）"]
-        direction LR
-        ML["LightGBM + SHAP 特征归因<br/>7 天销量预测<br/><code>ml_insights.py</code>"]
-        ML_FB["降级：|Pearson| 相关系数归因<br/>（lightgbm / shap 缺失或训练失败时）"]
-        ML -.->|ImportError / 异常| ML_FB
-    end
-
-    subgraph LLM["LLM 抽象层 — 三 Provider + 自动降级"]
-        direction LR
-        PROMPT["业务词典 prompt<br/>few-shot 格式约束 / 负向业务约束<br/>两段式：完整分析 → ≤100 字总结<br/><code>prompts.py</code>"]
-        TPL["template<br/>离线规则模板（默认，无需 Key）"]
-        OAI["openai_compatible<br/>OpenAI / DeepSeek / vLLM"]
-        ANT["anthropic<br/>Claude"]
-        TPL_FB["错误分类降级<br/>401 / 429 / 超时 → 规则模板<br/>错误文本不回显 Key"]
-        PROMPT --> TPL
-        PROMPT --> OAI
-        PROMPT --> ANT
-        OAI -.->|调用失败| TPL_FB
-        ANT -.->|调用失败| TPL_FB
-    end
-
-    subgraph L5["⑤ 渲染层 — 报告装配"]
-        direction LR
-        ASM["build_report：业绩总结置顶<br/>markdown2 → HTML · 标注数据源 / 时间锚点 / 生成模式<br/><code>report.py</code>"]
-        OUT["页面内渲染 + 下载 HTML<br/>（生产环境：PDF + IM 推送）"]
-        ASM --> OUT
-    end
-
-    UI --> MDP
-    MOCK --> METRICS
-    METRICS --> CH
-    METRICS --> FUN
-    METRICS --> DRILL
-    DRILL -->|"use_ml = True"| ML
-    ML --> DRILL
-    CH -->|"for_llm 纯文本"| PROMPT
-    FUN --> PROMPT
-    DRILL --> PROMPT
-    TPL -->|"≤100 字业绩总结"| ASM
-    TPL_FB --> ASM
-    CH -->|"for_human HTML 明细"| ASM
-    FUN --> ASM
-    DRILL --> ASM
-
-    classDef fallback fill:#fff7e0,stroke:#b45309,color:#1f2933,stroke-dasharray:5 5;
-    class ML_FB,TPL_FB fallback;
-```
-
-> 读图要点：数字只经过 ② `metrics.py` 一个入口（LLM 不做算术）；③ 各模块同时产出
-> 人读 HTML 明细（`for_human`）与模型输入纯文本（`for_llm`）；两条虚线降级链保证
-> 无 Key / 缺依赖时报告仍能完整产出。
-
-## 核心设计决策（为什么不只是"调 LLM 写报告"）
-
-| 设计 | 解决的问题 |
-|---|---|
-| **数字全部由代码计算**，LLM 只负责语言组织 | 从架构上杜绝 LLM 算错数的幻觉 |
-| **for_human / for_llm 双轨** | 同一份数据分别渲染人读明细与模型输入，互不污染 |
-| **业务术语词典 prompt**（ind.LY / PIP / Conv. Rate …） | LLM 不需要猜指标口径，结论可复现 |
-| **两段式对话**：先完整分析、再压缩为 ≤100 字总结 | 兼顾分析深度与报告可读性 |
-| **few-shot 输出格式约束** | 业绩总结结构稳定，可直接排版 |
-| **负向业务约束**（门店无定价权，禁止"优化定价"建议） | 结论符合业务常识，不误导一线 |
-| **规则引擎兜底**（潜力识别 / 离线模板） | LLM 故障或无 Key 时服务不中断 |
-| **"报告中的文字说明由AI生成"标注** | 风险披露，明确人机责任边界 |
-
-## 目录结构
-
-```
-├── app.py                    # Streamlit 入口（报告生成 + 产品说明双 Tab）
-├── site/
-│   └── index.html            # Cloudflare Pages 落地页（项目介绍 + iframe 嵌入 Demo）
-├── src/
-│   ├── mock_data.py          # 确定性 mock 数据生成器（blake2b 派生种子，跨进程可复现）
-│   ├── data_provider.py      # ReportRequest / ReportData 契约 + MockDataProvider（OdpsDataProvider 占位）
-│   ├── metrics.py            # 数字唯一入口：display_number / display_metrics
-│   ├── prompts.py            # 全部 prompt 模板（业务词典 / few-shot / 负向约束）
-│   ├── llm.py                # LLM 抽象层：template / openai_compatible / anthropic + 自动降级
-│   ├── analysis_channel.py   # 渠道分析（ONLINE/OFFLINE/二级渠道）
-│   ├── analysis_funnel.py    # DTC-RCMP 销售分析 + Sales Tree（HTML/CSS）
-│   ├── analysis_drilldown.py # PA→Family→Article 三级归因 + 潜力识别规则
-│   ├── ml_insights.py        # LightGBM+SHAP 归因、轻量 7 天预测
-│   └── report.py             # 报告装配（业绩总结置顶）
-├── tests/                    # pytest + Streamlit AppTest 回归
-└── data/                     # 首次运行自动生成的 mock 数据缓存（不入库）
-```
-
-## 从 notebook 到产品的工程化改造
-
-原始系统是一个串联执行的 Jupyter notebook，本 Demo 做了以下产品化重构：
-
-1. **依赖剥离**：ODPS 数仓 → mock 数据生成器（schema 一致，分析代码零改动）；
-2. **安全合规**：移除全部明文密钥与内网地址，LLM 配置走环境变量；
-3. **降级设计**：LLM 无 Key / 调用失败 → 规则模板；LightGBM/SHAP 缺失 → 相关系数归因；演示永不中断；
-4. **轻量化**：四模型融合归因 → 单模型 SHAP（完整模式保留开关）；Prophet 预测 → 轻量外推；
-5. **修复线上 bug**：原 `display_number` 的 ×100 启发式会把 100 口径下 <10 的真实差值误放大（-1.2 → -120），已修正；
-6. **交互化**：graphviz（依赖系统二进制）→ 纯 HTML/CSS Sales Tree；静态 PDF → 可交互 Web 报告。
-
-## 产品化路线图
-
-1. **配置化**：HFB / 周次已参数化（✅ 本 Demo 已实现）；潜力识别阈值当前为规则引擎内置常量，
-   UI 暴露为可调参数（🔄 待实现）；
-2. **IM 推送**：飞书/企微定时推送 PDF，触达一线店长；
-3. **追问式分析**：在报告上直接对话追问（"为什么 PA 013 上升？"）；
-4. **评估体系**：结论准确率抽检 + 业务采纳率回流，持续迭代 prompt 与规则阈值。
-
----
-
-## 隐私与安全声明
-
-- 所有数据均为**确定性仿真数据**（时间锚点 2025-07-06，仿真门店），不含任何真实经营数据；
-- API Key 仅保存在当前浏览器会话内，不写入文件、日志、URL 或报告；Key 会发送到
-  Streamlit 服务端再转发给模型服务商，建议使用低额度、可撤销的专用 Key；
-- 报告只记录 Provider、模型与调用状态，不记录 Key；
-- 公开版本已移除原 notebook 中的全部凭证、内网地址、绝对路径与真实输出；
-- 运行测试：`pytest`（含 Mock 跨进程确定性、LLM 降级、Key 不泄漏、AppTest 页面回归）。
+- [morphicons](https://github.com/guillermolg00/morphicons)（MIT）：图标变形。
+- [ReactDrops](https://reactdrops.dev)：`web/src/vendor/reactdrops` 里的 Liquid Glass Orb，遵循同目录的 `LICENSE`，只作为本应用的一部分使用，不单独分发。
+- [Olist 数据集](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)：CC BY-NC-SA 4.0，限非商业使用。
+- [RetailRocket 数据集](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)：使用前请核对 Kaggle 页面上的许可。

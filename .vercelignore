@@ -1,0 +1,9 @@
+data
+.venv
+tests
+web/node_modules
+reportagent/static
+.env
+.env.*
+docs
+reports

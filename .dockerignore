@@ -1,0 +1,9 @@
+data/
+.venv/
+tests/
+.git/
+.env
+.env.*
+reports/
+web/node_modules/
+reportagent/static/
