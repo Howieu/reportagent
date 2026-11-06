@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -110,7 +110,8 @@ def create_app(core: App | None = None) -> FastAPI:
         page = STATIC / "index.html"
         if not page.exists():
             raise HTTPException(404, "前端没有构建。线上前端在 Vercel；本地请运行 cd web && npm run build")
-        return FileResponse(page, headers={"Cache-Control": "no-cache"})
+        # 首页不带 ETag：部署后文件时间不变时，校验缓存可能让老用户拿到引用旧资源的页面而白屏
+        return HTMLResponse(page.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
     if (STATIC / "assets").exists():
         api.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")

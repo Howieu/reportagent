@@ -266,6 +266,16 @@ def test_projects_group_tasks_and_are_owner_scoped(demo_app, week):
     assert next(c for c in client.get("/api/conversations").json() if c["id"] == task["id"])["project"] is None  # 任务保留
 
 
+def test_index_is_never_revalidated_from_cache(demo_app, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import reportagent.server as server
+    (tmp_path / "index.html").write_text("<div id=root></div>", encoding="utf-8")
+    monkeypatch.setattr(server, "STATIC", tmp_path)
+    page = TestClient(server.create_app(demo_app)).get("/")
+    assert page.status_code == 200 and page.headers["cache-control"] == "no-store" and "etag" not in page.headers
+
+
 def test_rate_limit():
     from reportagent.server import RateLimiter
     limit = RateLimiter(2)
