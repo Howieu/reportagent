@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from .chat import ChatAgent
 from .funnel import analyze_funnel
-from .render import html_to_pdf_bytes, render_funnel
+from .render import find_chrome, html_to_pdf_bytes, render_funnel
 from .service import App
 from .warehouse import DataUnavailable
 
@@ -127,7 +127,7 @@ def create_app(core: App | None = None) -> FastAPI:
             "stores": [{"id": r["store"], "name": r["name"]} for _, r in stores.iterrows()],
             "categories": agent.tools.values("category"), "channels": agent.tools.values("channel"),
             "default_channel": core.semantic.default_channel, "default_focus": core.semantic.default_focus, "default_category": core.semantic.default_category,
-            "week": week, "latest": latest, "examples": random.sample(list(core.semantic.examples), len(core.semantic.examples)), "data_note": core.semantic.data_note, "has_funnel": core.semantic.has("funnel"),
+            "week": week, "latest": latest, "examples": random.sample(list(core.semantic.examples), len(core.semantic.examples)), "data_note": core.semantic.data_note, "has_funnel": core.semantic.has("funnel"), "server_pdf": bool(find_chrome()),
         }
 
     @api.get("/api/conversations")

@@ -1,24 +1,4 @@
 {
-  "outputDirectory": "reportagent/static",
-  "buildCommand": "cd web && npm run build",
-  "framework": "vite",
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://reportagent-api.onrender.com/api/:path*"
-    },
-    {
-      "source": "/reports/:path*",
-      "destination": "https://reportagent-api.onrender.com/reports/:path*"
-    },
-    {
-      "source": "/funnel",
-      "destination": "https://reportagent-api.onrender.com/funnel"
-    },
-    {
-      "source": "/funnel/:path*",
-      "destination": "https://reportagent-api.onrender.com/funnel/:path*"
-    }
-  ],
-  "installCommand": "cd web && npm ci"
+  "framework": "fastapi",
+  "buildCommand": "cd web && npm ci && npm run build -- --outDir ../public --emptyOutDir"
 }

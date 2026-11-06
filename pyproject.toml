@@ -13,10 +13,10 @@ dependencies = [
   "duckdb-engine>=0.13",
   "fastapi>=0.115",
   "uvicorn>=0.30",
+  "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
-postgres = ["psycopg[binary]>=3.2"]
 mysql = ["pymysql>=1.1"]
 maxcompute = ["pyodps>=0.12"]
 dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27"]
@@ -32,7 +32,7 @@ build-backend = "setuptools.build_meta"
 packages = ["reportagent"]
 
 [tool.setuptools.package-data]
-reportagent = ["*.j2", "static/*"]
+reportagent = ["*.j2", "static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

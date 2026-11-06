@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 from .analysis import analyze
 from .config import load_env, load_semantic
@@ -29,7 +30,7 @@ class State:
         if self.url.startswith("sqlite"):
             DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.prefix = "app." if self.url.startswith("postgresql") else ""
-        self.engine = create_engine(self.url, pool_pre_ping=True)
+        self.engine = create_engine(self.url, poolclass=NullPool) if os.environ.get("VERCEL") else create_engine(self.url, pool_pre_ping=True)
         p = self.prefix
         with self.engine.begin() as db:
             if p and db.execute(text("SELECT to_regnamespace('app')")).scalar() is None:

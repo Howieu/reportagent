@@ -1,10 +1,9 @@
 data
 .venv
 tests
-reportagent/*.py
-reportagent/*.j2
-reportagent/static
 web/node_modules
+reportagent/static
 .env
 .env.*
 docs
+reports

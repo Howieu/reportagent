@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import and_, case, column, create_engine, distinct, func, or_, select, table
+from sqlalchemy.pool import NullPool
 
 from .config import Semantic
 
@@ -85,6 +86,8 @@ class Warehouse:
             kwargs = {}
             if self.url.startswith("duckdb"):
                 kwargs["connect_args"] = {"read_only": True}
+            if os.environ.get("VERCEL"):
+                kwargs["poolclass"] = NullPool  # 无服务器函数不长期持有连接，交给数据库连接池
             engine = create_engine(self.url, **kwargs)
         self.engine = engine
         self.log = []

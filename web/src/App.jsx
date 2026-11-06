@@ -396,7 +396,7 @@ function Composer({ meta, busy, assist, onAssist, onSend, onStop, onReport, big,
 }
 
 // ---------- 右侧面板 ----------
-function Panel({ panel, onClose, onAsk }) {
+function Panel({ panel, serverPdf, onClose, onAsk }) {
   const frame = useRef(null);
   const [selection, setSelection] = useState(null);
   const [links, setLinks] = useState({});
@@ -425,7 +425,9 @@ function Panel({ panel, onClose, onAsk }) {
         <b title={panel.title}>{panel.title}</b>
         {!panel.loading && (
           <>
-            <a className="chip" href={links.pdf} target="_blank" rel="noopener"><Icon icon={Download} size={14} />PDF</a>
+            {serverPdf
+              ? <a className="chip" href={links.pdf} target="_blank" rel="noopener"><Icon icon={Download} size={14} />PDF</a>
+              : <button className="chip" title="在打印窗口选择“存储为 PDF”" onClick={() => frame.current?.contentWindow?.print()}><Icon icon={Download} size={14} />PDF</button>}
             <a className="icon-btn" href={links.open} target="_blank" rel="noopener" aria-label="新窗口打开"><Icon icon={ExternalLink} /></a>
           </>
         )}
@@ -436,7 +438,7 @@ function Panel({ panel, onClose, onAsk }) {
           <FluidAgentOrb preset="monochrome" state="searching" animateEntrance={false} style={{ width: 72, height: 72 }} />
           <p>正在从数仓取数并生成报告…</p>
         </div>
-      ) : <iframe ref={frame} src={url} title={panel.title} sandbox="allow-same-origin allow-forms" onLoad={onLoad} />}
+      ) : <iframe ref={frame} src={url} title={panel.title} sandbox="allow-same-origin allow-forms allow-modals" onLoad={onLoad} />}
       {panel.error && <p className="err panel-error" role="alert">{panel.error}</p>}
       {selection && (
         <button className="ask-sel" style={{ left: selection.x, top: selection.y }}
@@ -660,7 +662,7 @@ export default function App() {
           </>
         )}
       </main>
-      {panel && <Panel panel={panel} onClose={() => setPanel(null)} onAsk={ask} />}
+      {panel && <Panel panel={panel} serverPdf={meta?.server_pdf} onClose={() => setPanel(null)} onAsk={ask} />}
       {dialog && meta && <ReportDialog meta={meta} onClose={() => setDialog(false)} onCreate={createReport} />}
     </div>
   );

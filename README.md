@@ -53,20 +53,31 @@ REPORTAGENT_DB_URL=duckdb:///data/demo.duckdb REPORTAGENT_SEMANTIC=semantic.demo
 
 ## 部署
 
-线上地址：https://reportagent.vercel.app
+Render 和 Vercel 是两种独立的部署方式，任选其一都能运行完整产品。数据、会话和报告都放在 Supabase。
 
-前端在 Vercel（`vercel.json` 把接口转发到 Render），后端在 Render（`Dockerfile`），数据、会话和报告在 Supabase。数仓表放在 `warehouse` schema，应用状态放在 `app` schema，都不经过 Supabase 对外的 API。
+| | Render | Vercel |
+|---|---|---|
+| 方式 | `Dockerfile` | `app.py` + `vercel.json` |
+| 线上地址 | https://reportagent-api.onrender.com | https://reportagent.vercel.app |
+| PDF | 服务端用 Chromium 生成 | 用浏览器打印窗口存储为 PDF |
+| 冷启动 | 免费实例休眠后约一分钟 | 通常几秒 |
+
+数仓表放在 `warehouse` schema，应用状态放在 `app` schema，都不经过 Supabase 对外的 API。
 
 | 环境变量 | 说明 |
 |---|---|
+| `REPORTAGENT_SEMANTIC` | 语义配置文件 |
 | `REPORTAGENT_DB_URL` | 只读账号的数仓连接 |
 | `REPORTAGENT_APP_DB_URL` | 应用状态库连接 |
 | `LLM_API_KEY` | 模型密钥 |
+| `LLM_BASE_URL` | 模型接口地址 |
 | `LLM_MODEL` | 对话模型，必须支持工具调用，默认 `agent-model` |
 | `LLM_TEXT_MODEL` | 报告文字模型 |
 | `LLM_FALLBACK_MODEL` | 被限流时切换的模型 |
 | `REPORTAGENT_COOKIE_SECURE` | 线上设为 `1` |
 | `REPORTAGENT_CHAT_PER_HOUR` | 每个访客每小时提问上限，默认 30 |
+
+限流和查询缓存都在进程内，Vercel 上每个实例各算各的，不是严格的全局限制。
 
 ## 第三方组件
 
