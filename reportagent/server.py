@@ -1,6 +1,7 @@
 """FastAPI 服务：工作台页面、会话、对话流和报告。默认只监听本机，没有账号体系。"""
 
 import json
+import logging
 import os
 import random
 import secrets
@@ -13,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from .chat import ChatAgent
 from .funnel import analyze_funnel
@@ -82,7 +84,17 @@ def sse(event):
     return f"data: {json.dumps(event, ensure_ascii=False, default=_json)}\n\n"
 
 
+def init_error_tracking():
+    """配置了 SENTRY_DSN 才上报异常。不发送局部变量和个人信息，避免把对话和经营数据带出去。"""
+    dsn = os.environ.get("SENTRY_DSN")
+    if dsn:
+        import sentry_sdk
+
+        sentry_sdk.init(dsn=dsn, send_default_pii=False, include_local_variables=False)
+
+
 def create_app(core: App | None = None) -> FastAPI:
+    init_error_tracking()
     core = core or App()
     agent = ChatAgent(core)
     store = core.state
@@ -103,6 +115,18 @@ def create_app(core: App | None = None) -> FastAPI:
 
     @api.get("/healthz")
     def healthz():
+        return {"ok": True}
+
+    @api.get("/readyz")
+    def readyz():
+        # 外部监控用，确认两个数据库都连得上。平台健康检查继续用 /healthz，数据库抖动时不必重启实例。
+        try:
+            for engine in (store.engine, core.wh.engine):
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+        except Exception:
+            logging.exception("数据库检查失败")
+            raise HTTPException(503, "数据库暂时不可用") from None
         return {"ok": True}
 
     @api.get("/")

@@ -1,0 +1,47 @@
+name: backup
+
+on:
+  schedule:
+    - cron: "43 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    services:
+      restore:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: restore
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      BACKUP_DB_URL: ${{ secrets.BACKUP_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Dump the app schema
+        run: |
+          test -n "$BACKUP_DB_URL" && test -n "$BACKUP_PASSPHRASE"
+          docker run --rm --network host -e DB_URL="${BACKUP_DB_URL/+psycopg/}" postgres:17 \
+            sh -c 'pg_dump "$DB_URL" --schema=app --no-owner --no-privileges --format=custom' > app.dump
+          test -s app.dump
+      - name: Restore into a clean database and count rows
+        run: |
+          docker run --rm -i --network host -e PGPASSWORD=restore postgres:17 \
+            pg_restore --host=localhost --username=postgres --dbname=postgres --no-owner --no-privileges --exit-on-error < app.dump
+          for table in conversations messages reports projects; do
+            docker run --rm --network host -e PGPASSWORD=restore postgres:17 \
+              psql --host=localhost --username=postgres --tuples-only --no-align --command="SELECT '$table', count(*) FROM app.$table"
+          done
+      - name: Encrypt the dump
+        run: gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 --output app.dump.gpg app.dump
+      - name: Keep only the encrypted file
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-backup-${{ github.run_id }}
+          path: app.dump.gpg
+          retention-days: 30
+          if-no-files-found: error

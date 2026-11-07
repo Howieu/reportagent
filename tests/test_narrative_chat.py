@@ -233,6 +233,23 @@ def test_driver_tree_handles_opposite_factors_and_missing_values():
     assert "var(--data-alt)" in svg and "—" in svg and "Traffic" not in svg  # 反向为橙色，缺值显示 —，没有客流时不画 Traffic
 
 
+def test_readyz_reports_database_status(demo_app):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+
+    from reportagent.server import create_app
+
+    app = create_app(demo_app)
+    client = TestClient(app)
+    assert client.get("/readyz").json() == {"ok": True}
+    original, demo_app.state.engine = demo_app.state.engine, create_engine("postgresql+psycopg://nobody@127.0.0.1:1/none")
+    try:
+        response = client.get("/readyz")
+    finally:
+        demo_app.state.engine = original
+    assert response.status_code == 503 and "nobody" not in response.text
+
+
 def test_server_endpoints_isolate_visitors(demo_app, week):
     from fastapi.testclient import TestClient
 
