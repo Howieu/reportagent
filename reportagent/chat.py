@@ -10,7 +10,7 @@ from .narrative import ENTITY_DOWN, ENTITY_UP, check_text
 from .tools import SCHEMAS, WEB_MAX_CALLS, WEB_SCHEMA, ToolError, Tools
 
 MAX_ROUNDS = 4
-TOOL_LABEL = {"query_metrics": "取数问题", "explain_change": "归因分析", "generate_report": "生成报告", "list_values": "查询维度取值", "funnel_analysis": "漏斗分析", "web_search": "联网搜索"}
+TOOL_LABEL = {"query_metrics": "取数问题", "explain_change": "归因分析", "generate_report": "生成报告", "list_values": "查询维度取值", "funnel_analysis": "漏斗分析", "forecast_sales": "销量预测", "web_search": "联网搜索"}
 
 
 def match_verified(question, semantic):
@@ -45,6 +45,8 @@ def describe_call(name, args):
         return f"搜索：{args.get('query', '')}"
     if name == "funnel_analysis":
         return "按" + str(args.get("dimension") or "默认维度") + "拆分" + (f"；第 {args['week']} 周" if args.get("week") else "")
+    if name == "forecast_sales":
+        return f"{args.get('store') or '全部'} · {args.get('category') or '全部品类'} · {'销量' if args.get('metric') == 'qty' else '销售额'}"
     if name in {"explain_change", "generate_report"}:
         return f"{args.get('store', '')} · {args.get('category', '')}" + (f" · 第 {args['week']} 周" if args.get("week") else "")
     return f"查看 {args.get('dimension', '')}"
@@ -77,6 +79,8 @@ def system_prompt(semantic, tools: Tools, latest_week, web=False):
 规则：
 - 只要涉及数据就调用工具，不要凭记忆回答。
 - 问“为什么、什么原因、涨跌”时，只要有门店和品类，就调用一次 explain_change，它已经包含分解和下钻，不需要再拆查询。
+- 问下周、未来、预测、预计时调用 forecast_sales。销量指件数（qty），销售额指金额（sales）。
+- SHAP 只说明模型依赖什么，不能说成原因；工具结果写明数字来自基线时，要照实说模型没有赢过基线。
 - 能一次查完就不要多查。
 - 问题有歧义、缺少必要信息（比如要报告但没说门店），先追问一句。周次和渠道可以用默认值。
 - 问题超出销售、目标、客流、库存的范围，直接说明做不到，并说能回答什么。

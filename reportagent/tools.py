@@ -1,4 +1,4 @@
-"""对话 Agent 可调用的 4 个工具。LLM 只提供结构化参数，由这里校验并编译成 SQL。"""
+"""对话 Agent 可调用的固定工具。LLM 只提供结构化参数，由这里校验并编译成 SQL。"""
 
 import difflib
 import json
@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import pandas as pd
 
 from .analysis import analyze, idx, ratio
+from .forecast import forecast
 from .funnel import analyze_funnel
 from .narrative import FACTOR_NAMES, facts_summary, fi, money, num
 from .service import App
@@ -75,6 +76,14 @@ SCHEMAS = [
             "week": {"type": "string", "description": "ISO 周次 YYYYWW，不填用最近完整周"},
             "dimension": {"type": "string", "description": "拆分维度，如 category_l1、category_l2、category_id、item_id"},
             "filters": {"type": "object", "description": "下钻条件，维度到取值", "additionalProperties": True},
+        }}}},
+    {"type": "function", "function": {
+        "name": "forecast_sales",
+        "description": "预测未来 1 到 4 周的销售额或销量，并用 SHAP 说明模型依赖哪些因素。问下周、未来、预测、预计时使用。门店和品类不填表示全部。",
+        "parameters": {"type": "object", "properties": {
+            "store": {"type": "string"}, "category": {"type": "string"},
+            "metric": {"type": "string", "enum": ["sales", "qty"], "description": "sales 是销售额，qty 是销量（件数）"},
+            "week": {"type": "string", "description": "预测起点 ISO 周次 YYYYWW，不填用最近完整周"},
         }}}},
     {"type": "function", "function": {
         "name": "list_values",
@@ -483,6 +492,49 @@ class Tools:
                 "queries": [{"purpose": q["purpose"], "sql": q["sql"], "ms": q["ms"], "rows": q["rows"]} for q in f["queries"]],
                 "facts": "；".join(lines), "fallback": fallback, "suggestions": ["按二级品类拆开看漏斗", "这周转化比上周差在哪一步"]}
 
+    def forecast_sales(self, args):
+        store = self.resolve("store", args["store"]) if args.get("store") else None
+        category = self.resolve("category", args["category"]) if args.get("category") else None
+        metric = args.get("metric") or "sales"
+        try:
+            f = forecast(self.wh, store, category, metric, args.get("week"))
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        fmt, label = f["fmt"], f["metric_label"]
+        kind = "money" if metric == "sales" else "num"
+        columns = [{"key": "week", "label": "周", "kind": "text"}, {"key": "forecast", "label": f"预测{label}", "kind": kind},
+                   {"key": "range", "label": "80% 区间", "kind": "text"}, {"key": "vs_ly", "label": "vs LY", "kind": "index"},
+                   {"key": "method", "label": "数字来源", "kind": "text"}]
+        rows = [{"week": r["week"], "forecast": r["forecast"], "vs_ly": r["vs_ly"], "method": r["method"],
+                 "range": f"{fmt(r['low'])} 至 {fmt(r['high'])}" if r["low"] is not None else "—"} for r in f["rows"]]
+        display = [{c["key"]: (row[c["key"]] if c["kind"] == "text" else format_value(row[c["key"]], c["kind"])) for c in columns} for row in rows]
+        first = f["rows"][0]
+        names = dict(zip(self.wh.stores()["store"], self.wh.stores()["name"]))
+        scope = f"{names.get(store, store) if store else '全部'} · {category or '全部品类'}"
+        lines = ["80% 区间来自回测误差，是经验范围，不要称为置信区间。"]
+        lines += [f"第 {r['week']} 周预测{label} {d['forecast']}，80% 区间 {d['range']}，vs LY {d['vs_ly']}，数字来源 {r['method']}，"
+                 f"回测误差：模型 {'%.1f%%' % r['model_wape'] if r['model_wape'] is not None else '无'}，{r['baseline_name']} {r['baseline_wape']:.1f}%"
+                 for r, d in zip(f["rows"], display)]
+        shap = f["shap"]
+        if shap:
+            parts = "；".join(f"{i['factor']} {'+' if i['value'] >= 0 else ''}{fmt(i['value'])}" for i in shap["items"][:4])
+            lines.append(f"SHAP 只解释模型，不代表因果。下周模型预测 {fmt(shap['model'])}，近 8 周周均 {fmt(shap['start'])}，影响最大的因素：{parts}")
+        source = "模型" if first["beats"] else f"基线（{first['baseline_name']}）"
+        fallback = f"第 {first['week']} 周{label}预计 {fmt(first['forecast'])}，数字来自{source}。"
+        if first["low"] is not None:
+            fallback += f"80% 区间 {fmt(first['low'])} 至 {fmt(first['high'])}。"
+        if shap:
+            fallback += f"对模型预测影响最大的因素是{shap['items'][0]['factor']}，这是对模型的解释，不代表因果。"
+        assumptions = [f["origin_note"]] if f["origin_note"] else []
+        if not args.get("metric"):
+            assumptions.append("未指定指标，按销售额预测")
+        query = urlencode({k: v for k, v in {"store": store, "category": category, "metric": metric, "week": args.get("week")}.items() if v})
+        return {"kind": "table", "title": f"{scope} · {label}预测（起点第 {f['origin']} 周）", "columns": columns, "rows": rows, "display": display,
+                "chart": {"type": "line", "x": "week", "y": "forecast"}, "assumptions": assumptions, "note": None, "total_rows": len(rows),
+                "open": {"title": f"{label}预测 · {scope}", "url": f"/forecast?{query}", "label": "打开预测报告，查看回测和 SHAP 归因"},
+                "queries": [{"purpose": q["purpose"], "sql": q["sql"][:1500], "ms": q["ms"], "rows": q["rows"]} for q in f["queries"]],
+                "facts": "\n".join(lines), "fallback": fallback, "suggestions": ["这个预测的回测准不准", "按销量再预测一次"]}
+
     def web_search(self, args):
         query = str(args.get("query") or "").strip()
         if not query:
@@ -522,7 +574,7 @@ class Tools:
     def call(self, name, args):
         handler = {"query_metrics": self.query_metrics, "explain_change": self.explain_change,
                    "generate_report": self.generate_report, "list_values": self.list_values,
-                   "funnel_analysis": self.funnel_analysis, "web_search": self.web_search}.get(name)
+                   "funnel_analysis": self.funnel_analysis, "forecast_sales": self.forecast_sales, "web_search": self.web_search}.get(name)
         if not handler:
             raise ToolError(f"未知工具 {name}")
         try:

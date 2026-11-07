@@ -1,6 +1,6 @@
 import {
   ArrowUp, Check, ChevronDown, ChevronRight, Download, Ellipsis, ExternalLink, FileText, Filter, Folder, FolderInput, FolderOpen, FolderPlus,
-  Menu, PanelLeft, PanelRight, Pencil, Plus, Search, Square, SquarePen, ThumbsDown, ThumbsUp, Trash2, X,
+  Menu, PanelLeft, PanelRight, Pencil, Plus, Search, Square, SquarePen, ThumbsDown, ThumbsUp, Trash2, TrendingUp, X,
 } from 'lucide';
 import { MorphIcon } from 'morphicons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -141,7 +141,7 @@ function ProjectGroup({ project, tasks, open, active, onToggle, onNewTask, onCha
   );
 }
 
-function Sidebar({ meta, conversations, projects, activeId, activeProject, onNew, onOpen, onRefresh, onDeleted, onReport, onFunnel, onCollapse }) {
+function Sidebar({ meta, conversations, projects, activeId, activeProject, onNew, onOpen, onRefresh, onDeleted, onReport, onPages, onCollapse }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [closed, setClosed] = useState({});
@@ -165,7 +165,8 @@ function Sidebar({ meta, conversations, projects, activeId, activeProject, onNew
       <nav className="side-nav">
         <button onClick={() => onNew(null)}><Icon icon={SquarePen} />新任务</button>
         <button onClick={onReport}><Icon icon={FileText} />生成报告</button>
-        {meta?.has_funnel && <button onClick={onFunnel}><Icon icon={Filter} />漏斗分析</button>}
+        {meta?.has_funnel && <button onClick={() => onPages()}><Icon icon={Filter} />漏斗分析</button>}
+        <button onClick={() => onPages('/forecast', '销量预测')}><Icon icon={TrendingUp} />销量预测</button>
       </nav>
       <div className="history">
         <div className="section-head">
@@ -245,7 +246,7 @@ function Chart({ result }) {
   );
 }
 
-function Result({ result, onOpenFunnel }) {
+function Result({ result, onOpenPage }) {
   const more = result.total_rows > result.rows.length;
   return (
     <div className="result">
@@ -263,7 +264,7 @@ function Result({ result, onOpenFunnel }) {
         </table>
       </div>
       <div className="meta">
-        {result.open && <button className="chip" onClick={() => onOpenFunnel(result.open.url, result.open.title)}>打开漏斗看板，继续下钻</button>}
+        {result.open && <button className="chip" onClick={() => onOpenPage(result.open.url, result.open.title)}>{result.open.label || '打开漏斗看板，继续下钻'}</button>}
         {more && <div>共 {result.total_rows} 行，这里显示前 {result.rows.length} 行。</div>}
         {result.assumptions?.length > 0 && <div>假设：{result.assumptions.join('；')}</div>}
         {result.queries?.length > 0 && (
@@ -327,7 +328,7 @@ function fold(events) {
   return s;
 }
 
-function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
+function BotMessage({ events, live, onAsk, onOpenReport, onOpenPage }) {
   const s = useMemo(() => fold(events), [events]);
   const [feedback, setFeedback] = useState(null);
   const pending = s.tasks.filter((t) => t.status === 'running').length;
@@ -364,7 +365,7 @@ function BotMessage({ events, live, onAsk, onOpenReport, onOpenFunnel }) {
             <div><b>{r.report.title}</b>{r.assumptions?.length > 0 && <div className="assume">{r.assumptions.join('；')}</div>}</div>
             <button className="chip" onClick={() => onOpenReport(r.report)}>查看报告</button>
           </div>
-        ) : <Result key={i} result={r} onOpenFunnel={onOpenFunnel} />))}
+        ) : <Result key={i} result={r} onOpenPage={onOpenPage} />))}
         {s.error && <p className="err" role="alert">{s.error}</p>}
         {s.stopped && <p className="warn">任务已终止。</p>}
         {live && <div className="working"><span className="dots"><i /><i /><i /></span>{status}</div>}
@@ -417,6 +418,8 @@ function Composer({ meta, busy, assist, onAssist, web, onWeb, onSend, onStop, on
 }
 
 // ---------- 右侧面板 ----------
+const pdfUrl = (url) => url.replace(/^\/(funnel|forecast)/, '/$1/pdf');
+
 function Panel({ panel, serverPdf, onClose, onAsk }) {
   const frame = useRef(null);
   const [selection, setSelection] = useState(null);
@@ -428,9 +431,9 @@ function Panel({ panel, serverPdf, onClose, onAsk }) {
     try { doc = frame.current.contentDocument; } catch { return; }
     if (!doc) return;
     const path = doc.location?.pathname || '';
-    if (path.startsWith('/funnel')) {
+    if (path.startsWith('/funnel') || path.startsWith('/forecast')) {
       const current = path + doc.location.search;
-      setLinks({ open: current, pdf: current.replace('/funnel', '/funnel/pdf') });
+      setLinks({ open: current, pdf: pdfUrl(current) });
     }
     doc.addEventListener('mousedown', () => setSelection(null));
     doc.addEventListener('mouseup', () => {
@@ -544,8 +547,8 @@ export default function App() {
     setPanel({ title: report.title, url: `/reports/${report.id}`, pdf: `/reports/${report.id}/pdf` });
     if (window.innerWidth < 1300) setSideOpen(false);
   }, []);
-  const openFunnel = useCallback((url = '/funnel', title = '漏斗分析') => {
-    setPanel({ title, url, pdf: url.replace('/funnel', '/funnel/pdf') });
+  const openPage = useCallback((url = '/funnel', title = '漏斗分析') => {
+    setPanel({ title, url, pdf: pdfUrl(url) });
     if (window.innerWidth < 1300) setSideOpen(false);
   }, []);
 
@@ -646,7 +649,7 @@ export default function App() {
     <div className="app">
       {sideOpen && (
         <Sidebar meta={meta} conversations={conversations} projects={projects} activeId={cid} activeProject={projectId} onNew={newChat} onOpen={openConversation} onRefresh={refresh}
-          onDeleted={(id) => { if (id === cid) newChat(projectId); else refresh(); }} onReport={() => setDialog(true)} onFunnel={() => openFunnel()} onCollapse={() => setSideOpen(false)} />
+          onDeleted={(id) => { if (id === cid) newChat(projectId); else refresh(); }} onReport={() => setDialog(true)} onPages={openPage} onCollapse={() => setSideOpen(false)} />
       )}
       <main className="center">
         <div className="center-top">
@@ -654,7 +657,7 @@ export default function App() {
           {!sideOpen && <><Logo /><b>{meta?.branding?.name || 'ReportAgent'}</b></>}
           <span className="spacer" />
           {!empty && <button className="icon-btn" aria-label="新任务" onClick={() => newChat(projectId)} disabled={busy}><Icon icon={Plus} /></button>}
-          {!panel && meta?.has_funnel && <button className="icon-btn" aria-label="打开漏斗面板" onClick={() => openFunnel()}><Icon icon={PanelRight} /></button>}
+          {!panel && meta?.has_funnel && <button className="icon-btn" aria-label="打开漏斗面板" onClick={() => openPage()}><Icon icon={PanelRight} /></button>}
         </div>
         {empty ? (
           <div className="home">
@@ -677,7 +680,7 @@ export default function App() {
               <div className="thread">
                 {messages.map((m, i) => (m.role === 'user'
                   ? <div className="msg-user" key={i}><div>{m.content}</div></div>
-                  : <BotMessage key={i} events={m.events} live={m.live} onAsk={ask} onOpenReport={openReport} onOpenFunnel={openFunnel} />))}
+                  : <BotMessage key={i} events={m.events} live={m.live} onAsk={ask} onOpenReport={openReport} onOpenPage={openPage} />))}
               </div>
             </div>
             {composer}

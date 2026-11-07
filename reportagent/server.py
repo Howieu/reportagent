@@ -253,6 +253,27 @@ def create_app(core: App | None = None) -> FastAPI:
             raise HTTPException(503, str(exc)) from exc
         return Response(data, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="funnel.pdf"'})
 
+    def _forecast_html(request: Request):
+        if not report_limit.allow(request.state.uid) or not report_limit.allow(client_ip(request)):
+            raise HTTPException(429, "预测太频繁，请稍后再试")
+        q = request.query_params
+        try:
+            return core.forecast_html(q.get("store") or None, q.get("category") or None, q.get("metric") or "sales", q.get("week") or None)
+        except (DataUnavailable, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.get("/forecast", response_class=HTMLResponse)
+    def forecast_page(request: Request):
+        return HTMLResponse(_forecast_html(request), headers={"Content-Security-Policy": REPORT_CSP})
+
+    @api.get("/forecast/pdf")
+    def forecast_pdf(request: Request):
+        try:
+            data = html_to_pdf_bytes(_forecast_html(request))
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return Response(data, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="forecast.pdf"'})
+
     @api.get("/reports/{report_id}", response_class=HTMLResponse)
     def report_html(report_id: str):
         html_text = core.report_html(report_id)

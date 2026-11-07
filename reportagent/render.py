@@ -104,6 +104,48 @@ def render_funnel(result, base="/funnel"):
     return _env.get_template("funnel.html.j2").render(f=result, base=base, drill=drill, pts=points)
 
 
+def forecast_chart(history, rows, width=760, height=190):
+    """近期实际（实线）+ 预测（虚线）+ 80% 区间（灰带）。"""
+    actual = [h["value"] for h in history]
+    bounds = [v for r in rows for v in (r["forecast"], r["low"], r["high"]) if v is not None]
+    top = max([*actual, *bounds, 1]) * 1.05
+    count = len(actual) + len(rows)
+
+    def x(i):
+        return 8 + i * (width - 16) / (count - 1)
+
+    def y(v):
+        return height - 22 - v / top * (height - 32)
+
+    start = len(actual) - 1
+    line = " ".join(f"{'M' if i == 0 else 'L'}{x(i):.1f} {y(v):.1f}" for i, v in enumerate(actual))
+    future = [(start, actual[-1]), *[(start + 1 + i, r["forecast"]) for i, r in enumerate(rows)]]
+    dashed = " ".join(f"{'M' if i == 0 else 'L'}{x(n):.1f} {y(v):.1f}" for i, (n, v) in enumerate(future))
+    known = [(start + 1 + i, r) for i, r in enumerate(rows) if r["low"] is not None]
+    band = ""
+    if known:
+        edge = [f"{x(n):.1f},{y(r['high']):.1f}" for n, r in known] + [f"{x(n):.1f},{y(r['low']):.1f}" for n, r in reversed(known)]
+        band = f'<polygon points="{" ".join(edge)}" fill="#ddd"/>'
+    weeks = [h["week"] for h in history] + [r["week"] for r in rows]
+    ticks = "".join(f'<text x="{x(i):.1f}" y="{height - 6}" font-size="11" text-anchor="{"start" if i == 0 else "end" if i == count - 1 else "middle"}">{w}</text>'
+                    for i, w in enumerate(weeks) if (i % 4 == 0 and i < count - 2) or i == count - 1)
+    return Markup(f'<svg class="fchart" viewBox="0 0 {width} {height}" role="img" aria-label="近期实际和未来预测">{band}'
+                  f'<line x1="8" x2="{width - 8}" y1="{height - 22}" y2="{height - 22}" stroke="#999" stroke-width=".75"/>'
+                  f'<path d="{line}" fill="none" stroke="#111" stroke-width="1.6"/>'
+                  f'<path d="{dashed}" fill="none" stroke="#111" stroke-width="1.6" stroke-dasharray="5 4"/>{ticks}</svg>')
+
+
+def render_forecast(result, stores, categories, scope, source_name, synthetic=False, base="/forecast"):
+    fmt = result["fmt"]
+
+    def signed_value(v):
+        return ("+" if v >= 0 else "") + fmt(v)
+
+    return _env.get_template("forecast.html.j2").render(
+        f=result, fmt=fmt, signed_value=signed_value, stores=stores, categories=categories, scope=scope, base=base,
+        source_name=source_name, synthetic=synthetic, chart=forecast_chart(result["history"], result["rows"]))
+
+
 def _note(item):
     if item.get("potential"):
         return f"潜力高：{item['reason']}"
