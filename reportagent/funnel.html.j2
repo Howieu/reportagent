@@ -56,7 +56,7 @@
 {% set c.figure = c.figure + 1 %}
 <div class="caption">图 {{ c.figure }}　近 8 周整体转化</div>
 {% set trend_weeks = [] %}{% for x in f.trend %}{% if trend_weeks.append(x.week[-2:]) %}{% endif %}{% endfor %}
-{{ f.trend | map(attribute='overall') | list | spark(trend_weeks, 640, 150, none, '{:.2f}%') }}
+{{ f.trend | map(attribute='overall') | list | spark(trend_weeks, 640, 150, '{:.2f}%') }}
 <p class="source">{% for x in f.trend %}{{ x.week[-2:] }} 周 {{ '%.2f%%' | format(x.overall or 0) }}{{ '　' if not loop.last }}{% endfor %}</p>
 </section>
 

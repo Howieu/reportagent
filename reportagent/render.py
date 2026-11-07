@@ -53,14 +53,13 @@ def _ticks(low, high, count=3):
     return [n * step for n in range(first, last + 1)]
 
 
-def spark(values, labels, width=156, height=42, baseline=100, fmt="{:.0f}"):
-    """趋势折线：左侧数值轴、浅网格、深蓝细线。baseline 画成深色基准线；没有基准线时在末点标值。"""
+def spark(values, labels, width=156, height=42, fmt="{:.0f}"):
+    """趋势折线：左侧数值轴、浅网格、深蓝细线，末点标值。"""
     points = [(i, v) for i, v in enumerate(values) if v is not None]
     if len(points) < 2:
         return Markup("")
     series = [v for _, v in points]
-    ticks = _ticks(min(*series, baseline) if baseline is not None else min(series),
-                   max(*series, baseline) if baseline is not None else max(series))
+    ticks = _ticks(min(series), max(series))
     left, right, top, bottom = 8 + 6 * max(len(fmt.format(t)) for t in ticks), 8, 8, 18
 
     def x(i):
@@ -71,14 +70,11 @@ def spark(values, labels, width=156, height=42, baseline=100, fmt="{:.0f}"):
 
     grid = "".join(f'<line x1="{left}" x2="{width}" y1="{y(t):.1f}" y2="{y(t):.1f}" stroke="var(--border)" stroke-width="1"/>'
                    f'<text x="{left - 5}" y="{y(t) + 3.5:.1f}" font-size="10" text-anchor="end" fill="var(--muted)">{fmt.format(t)}</text>' for t in ticks)
-    if baseline is not None:
-        grid += f'<line x1="{left}" x2="{width}" y1="{y(baseline):.1f}" y2="{y(baseline):.1f}" stroke="var(--border-strong)" stroke-width="1"/>'
     grid += "".join(f'<text x="{x(i):.1f}" y="{height - 4}" font-size="10" text-anchor="middle" fill="var(--muted)">{w}</text>' for i, w in enumerate(labels))
     path = " ".join(f"{'M' if n == 0 else 'L'}{x(i):.1f} {y(v):.1f}" for n, (i, v) in enumerate(points))
     last = points[-1][0]
     dots = "".join(f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="{3 if i == last else 2.2}" fill="{"var(--line)" if i == last else "var(--surface)"}" stroke="var(--line)" stroke-width="1.5"><title>{fmt.format(v)}</title></circle>' for i, v in points)
-    if baseline is None:
-        dots += f'<text x="{x(last):.1f}" y="{y(series[-1]) - 8:.1f}" font-size="11" font-weight="600" text-anchor="end" fill="var(--fg)">{fmt.format(series[-1])}</text>'
+    dots += f'<text x="{x(last):.1f}" y="{y(series[-1]) - 8:.1f}" font-size="11" font-weight="600" text-anchor="end" fill="var(--fg)">{fmt.format(series[-1])}</text>'
     return Markup(f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" aria-label="趋势折线">{grid}'
                   f'<path d="{path}" fill="none" stroke="var(--line)" stroke-width="1.75" stroke-linejoin="round"/>{dots}</svg>')
 
@@ -107,6 +103,87 @@ def index_chart(overall, key, comp_key):
             parts.append(f'<text x="{center + 27}" y="{yy + 3.5:.1f}" font-size="10" fill="var(--muted)">{round(comp)}</text>')
         parts.append(f'<text x="{center}" y="{base + 16}" font-size="12" text-anchor="middle" fill="var(--muted)">{name}</text>')
     return Markup(f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="指数柱状图">{"".join(parts)}</svg>')
+
+
+NODE_NAMES = {**FACTOR_NAMES, "sales": "Sales", "ab": "AB", "qty": "Qty"}
+NODE_W, NODE_H = 184, 92
+TREE_COLUMNS = (2, 252, 502)
+TREE_ROWS = (2, 102, 202, 302)
+
+
+def _tree_node(key, x, y, tree, shares, scale, on_path):
+    """驱动树的一个方框：指数、近 4 周折线（灰线为 100）、贡献条。"""
+    value = tree["nodes"][key]["vs_ly"]
+    share = shares.get(key)
+    pad = 12
+    color = "--up-text" if (value or 100) > 100.5 else "--down-text" if (value or 100) < 99.5 else "--fg"
+    fill, stroke, weight = ("--highlight", "--line", 1.5) if on_path else ("--surface", "--border-strong", 1)
+    parts = [f'<rect x="{x}" y="{y}" width="{NODE_W}" height="{NODE_H}" rx="6" fill="var({fill})" stroke="var({stroke})" stroke-width="{weight}"/>',
+             f'<text x="{x + pad}" y="{y + 21}" font-size="12" fill="var(--muted)">{NODE_NAMES[key]} vs LY</text>',
+             f'<text x="{x + NODE_W - pad}" y="{y + 25}" font-size="{24 if key == "sales" else 19}" font-weight="600" text-anchor="end" fill="var({color})">{"—" if value is None else round(value)}</text>']
+    points = [(i, v) for i, v in enumerate(tree["trend"][key]) if v is not None]
+    if len(points) >= 2:
+        top, height = y + 38, NODE_H - (66 if share is not None else 50)
+        low, high = min(*(v for _, v in points), 100), max(*(v for _, v in points), 100)
+
+        def px(i):
+            return x + pad + i * (NODE_W - 2 * pad) / (len(tree["trend"][key]) - 1)
+
+        def py(v):
+            return top + height - (v - low) * height / ((high - low) or 1)
+
+        line = " ".join(f"{px(i):.1f},{py(v):.1f}" for i, v in points)
+        last_i, last_v = points[-1]
+        parts.append(f'<line x1="{x + pad}" x2="{x + NODE_W - pad}" y1="{py(100):.1f}" y2="{py(100):.1f}" stroke="var(--border-strong)"/>'
+                     f'<polyline points="{line}" fill="none" stroke="var(--line)" stroke-width="1.6" stroke-linejoin="round"/>'
+                     f'<circle cx="{px(last_i):.1f}" cy="{py(last_v):.1f}" r="2.8" fill="var(--line)"/>')
+    if share is not None:
+        bar_y, track = y + NODE_H - 17, NODE_W - 2 * pad - 46
+        bar = "--data-alt" if share < 0 else "--line" if on_path else "--line-soft"
+        parts.append(f'<rect x="{x + pad}" y="{bar_y}" width="{track}" height="5" rx="2" fill="var(--border)"/>'
+                     f'<rect x="{x + pad}" y="{bar_y}" width="{max(track * abs(share) / scale, 2):.1f}" height="5" rx="2" fill="var({bar})"/>'
+                     f'<text x="{x + NODE_W - pad}" y="{bar_y + 6}" font-size="11" text-anchor="end" fill="var(--muted)">{share:+.0f}%</text>')
+    return "".join(parts)
+
+
+def _tree_link(x1, y1, x2, y2, on_path):
+    middle = (x1 + x2) / 2
+    stroke, weight = ("--line", 2) if on_path else ("--border-strong", 1)
+    return f'<path d="M{x1} {y1} H{middle} V{y2} H{x2}" fill="none" stroke="var({stroke})" stroke-width="{weight}"/>'
+
+
+def driver_tree(tree):
+    """销售驱动树：Sales → Trans / AB → 下层因素。主要驱动因素的路径用蓝色标出，贡献条橙色表示与总变化反向。"""
+    nodes = tree["nodes"]
+    leaves = {c["factor"]: c["share"] for c in tree["contributions"]}
+    groups = {"tickets": [k for k in ("traffic", "cr") if k in nodes], "ab": [k for k in ("ai", "price") if k in nodes]}
+    shares = dict(leaves)
+    for key, children in groups.items():
+        known = [leaves[k] for k in children if k in leaves]
+        if known:
+            shares[key] = sum(known)
+    scale = max((abs(v) for v in shares.values()), default=1) or 1
+    driver = tree["driver"]
+    path = {"sales", driver} | {g for g, children in groups.items() if driver in children}
+    c1, c2, c3 = TREE_COLUMNS
+    half = NODE_H / 2
+    group_y = {"tickets": (TREE_ROWS[0] + TREE_ROWS[1]) / 2, "ab": (TREE_ROWS[2] + TREE_ROWS[3]) / 2}
+    sales_y = sum(group_y.values()) / 2
+    links, boxes = [], [_tree_node("sales", c1, sales_y, tree, {}, scale, True)]
+    for slot, (key, children) in enumerate(groups.items()):
+        y = group_y[key]
+        links.append((key in path, _tree_link(c1 + NODE_W, sales_y + half, c2, y + half, key in path)))
+        boxes.append(_tree_node(key, c2, y, tree, shares, scale, key in path))
+        for n, child in enumerate(children):
+            child_y = TREE_ROWS[slot * 2 + n]
+            links.append((child in path, _tree_link(c2 + NODE_W, y + half, c3, child_y + half, child in path)))
+            boxes.append(_tree_node(child, c3, child_y, tree, shares, scale, child in path))
+    links.sort(key=lambda item: item[0])  # 高亮路径画在最上层
+    qty = nodes.get("qty", {}).get("vs_ly")
+    extra = "" if qty is None else (f'<text x="{c1 + NODE_W / 2}" y="{sales_y + NODE_H + 24}" font-size="12" text-anchor="middle" fill="var(--muted)">'
+                                    f'Qty vs LY <tspan font-weight="600" fill="var(--fg)">{round(qty)}</tspan></text>')
+    label = f"Sales 驱动树，主要驱动因素是 {NODE_NAMES.get(driver, '—')}"
+    return Markup(f'<svg class="driver-tree" viewBox="0 0 688 396" role="img" aria-label="{label}">{"".join(link for _, link in links)}{"".join(boxes)}{extra}</svg>')
 
 
 def contribution_bars(items):
@@ -142,7 +219,7 @@ def mix_bars(items):
 _env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape(["html.j2"]),
                    trim_blocks=True, lstrip_blocks=True)
 _env.filters.update(fi=fi, signed=signed, money=money, num=num, rich=rich, delta=delta, spark=spark,
-                    bars=contribution_bars, mix_bars=mix_bars)
+                    bars=contribution_bars, mix_bars=mix_bars, driver_tree=driver_tree)
 # 横幅实景图（CC0，来源 rawpixel.com/image/5941607，裁切并轻微虚化）。内嵌成 data URI，PDF 和离线 HTML 都不依赖外部图片；换图只需替换这个文件。
 _env.globals["scene_image"] = "data:image/jpeg;base64," + base64.b64encode((HERE / "report_scene.jpg").read_bytes()).decode()
 
@@ -233,7 +310,10 @@ def _titles(r):
     worst = min(regions, key=lambda x: x["sales_vs_ly"]) if regions else None
     drill = (f"{word}主要来自{labels['subcategory']} {subs[0]['name']}（贡献 {fi(subs[0]['contribution'])}%）" if subs
              else f"排除新品后没有{labels['subcategory']}朝{word}方向变化，变化主要来自新品")
+    driver = next((c for c in r["tree"]["contributions"] if c["factor"] == r["tree"]["driver"]), None)
+    sales_index = r["tree"]["nodes"]["sales"]["vs_ly"]
     return {
+        "tree": f"Sales vs LY {fi(sales_index)}，主要驱动因素是 {FACTOR_NAMES[driver['factor']]}（贡献 {driver['share']:+.0f}%）。" if driver else f"Sales vs LY {fi(sales_index)}。",
         "drill": f"{drill}。",
         "region": (f"{best['name']}同比最高（vs LY {fi(best['sales_vs_ly'])}），{worst['name']}最低（vs LY {fi(worst['sales_vs_ly'])}）。" if best and best is not worst else ""),
     }
@@ -251,16 +331,11 @@ def _follow_ups(r):
 
 
 def render_html(report, sections, queries=()):
-    node_labels = {"sales": "Sales", "tickets": "Trans", "ab": "AB", "traffic": "Traffic", "cr": "CR",
-                   "ai": "AI", "price": "Price/item", "qty": "Qty"}
-    nodes = report["tree"]["nodes"]
-    bottom = ["traffic", "cr", "ai", "price"] if "traffic" in nodes else ["ai", "price"]
-    tree_rows = [[k for k in row if k in nodes] for row in (["sales"], ["tickets", "qty", "ab"], bottom)]
     monday = parse_week(report["week"])
     week_labels = [week_of(monday - timedelta(days=7 * i))[-2:] for i in range(3, -1, -1)]
     return _env.get_template("report.html.j2").render(
-        r=report, s=sections, queries=list(queries), node_labels=node_labels, titles=_titles(report), follow_ups=_follow_ups(report),
-        factor_names=FACTOR_NAMES, generated=datetime.now().strftime("%Y-%m-%d %H:%M"), tree_rows=tree_rows, week_labels=week_labels, index_chart=index_chart)
+        r=report, s=sections, queries=list(queries), titles=_titles(report), follow_ups=_follow_ups(report),
+        generated=datetime.now().strftime("%Y-%m-%d %H:%M"), week_labels=week_labels, index_chart=index_chart)
 
 
 def find_chrome():

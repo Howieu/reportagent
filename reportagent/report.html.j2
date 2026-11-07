@@ -78,18 +78,9 @@
 </section>
 
 <section class="panel">
-<div class="sales-tree">
-  {% for row in tree_rows %}<div class="tree-row cols-{{ row | length }}">{% for key in row %}
-    <div class="tcell"><div class="tcell-head"><span>{{ node_labels[key] }} vs LY</span><b>{{ n[key].vs_ly | delta }}</b></div>{{ r.tree.trend[key] | spark(week_labels, (640 // (row | length)) - 24, 104) }}</div>
-  {% endfor %}</div>{% endfor %}
-</div>
-<p class="source">近 4 周各指标与去年同期之比，深色横线为 100。Sales = {{ 'Traffic × CR' if 'traffic' in n else 'Trans' }} × AI × Price/item。</p>
-</section>
-
-<section class="panel">
-  <p class="chart-title">Sales 同比变化的因素贡献</p>
-  {{ r.tree.contributions | bars }}
-  <p class="source">蓝色与总变化同向，橙色反向。对数分解，各项相加等于 100%。</p>
+<p class="takeaway">{{ titles.tree }}</p>
+<div class="scroll">{{ r.tree | driver_tree }}</div>
+<p class="source">折线为 wk{{ week_labels[0] }} 至 wk{{ week_labels[-1] }} 的同比指数，灰线为 100。蓝色路径是主要驱动因素，橙色条表示与总变化反向。贡献为对数分解，下层因素相加等于 100%。</p>
 </section>
 
 <section class="panel flow">

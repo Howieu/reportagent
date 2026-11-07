@@ -216,6 +216,23 @@ def test_report_renders_with_synthetic_label_and_escapes(demo_app, week):
     assert "合成数据" in html and "<script>alert" not in html and "业绩总结" in html and "Sales vs LY" in html
 
 
+def test_driver_tree_handles_opposite_factors_and_missing_values():
+    from reportagent.render import driver_tree
+
+    def node(v):
+        return {"vs_ly": v}
+
+    keys = {"sales": 109, "qty": 171, "tickets": 164, "ab": 66, "ai": None, "price": 64}
+    svg = str(driver_tree({
+        "nodes": {k: node(v) for k, v in keys.items()},
+        "trend": {k: [100, None, 90, v] for k, v in keys.items()},
+        "contributions": [{"factor": "tickets", "share": 597.0}, {"factor": "price", "share": -543.0}],
+        "driver": "tickets",
+    }))
+    assert "主要驱动因素是 Trans" in svg and "+597%" in svg and "-543%" in svg
+    assert "var(--data-alt)" in svg and "—" in svg and "Traffic" not in svg  # 反向为橙色，缺值显示 —，没有客流时不画 Traffic
+
+
 def test_server_endpoints_isolate_visitors(demo_app, week):
     from fastapi.testclient import TestClient
 
