@@ -12,8 +12,8 @@
 td a { color:inherit; }
 .crumbs { font-size:13px; margin:0 0 8px; }
 .fstep { display:grid; grid-template-columns:70px 1fr 190px; gap:10px; align-items:center; margin:4px 0; font-size:13px; }
-.ftrack { height:14px; background:#eee; }
-.ftrack i { display:block; height:100%; background:#333; min-width:2px; }
+.ftrack { height:14px; background:var(--tint); border-radius:2px; }
+.ftrack i { display:block; height:100%; background:var(--series); border-radius:2px; min-width:2px; }
 .fconv { color:var(--muted); font-size:12.5px; padding-left:80px; }
 </style>
 </head>
@@ -21,6 +21,7 @@ td a { color:inherit; }
 <main>
 {% set t = f.total %}{% set S = t.steps %}{% set c = namespace(table=0, figure=0) %}
 {% macro source(extra='') %}<p class="source">数据来源：RetailRocket 公开行为数据，代码计算。{{ extra }}</p>{% endmacro %}
+{% set banner_text = 'wk' ~ f.week %}{% set banner_sub = '转化漏斗分析' %}{% include "report_banner.html.j2" %}
 <h1>电商转化漏斗分析报告</h1>
 <p class="meta-line">报告周期：第 {{ f.week }} 周（{{ f.period.start }} 至 {{ f.period.end }}）　数据截至：{{ f.latest_date }}</p>
 <hr class="head-rule">

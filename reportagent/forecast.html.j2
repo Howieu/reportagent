@@ -11,12 +11,14 @@
 .select button { height:30px; padding:0 14px; border:1px solid #111; background:#111; color:#fff; font:inherit; font-size:13px; cursor:pointer; }
 .fchart { width:100%; display:block; }
 .cbar { grid-template-columns:128px 1fr 54px; }
+.fchart { background:var(--card); border-radius:4px; }
 </style>
 </head>
 <body>
 <main>
 {% set first = f.rows[0] %}{% set c = namespace(table=0, figure=0) %}
 {% macro source(extra='') %}<p class="source">数据来源：{{ source_name }}，代码计算。{{ extra }}</p>{% endmacro %}
+{% set banner_text = 'wk' ~ f.origin %}{% set banner_sub = scope ~ ' ' ~ f.metric_label ~ '预测' %}{% include "report_banner.html.j2" %}
 <h1>{{ scope }} {{ f.metric_label }}预测报告</h1>
 <p class="meta-line">预测起点：第 {{ f.origin }} 周（{{ f.origin_period.start }} 至 {{ f.origin_period.end }}）　数据截至：{{ f.latest_date }}</p>
 <hr class="head-rule">
@@ -46,7 +48,7 @@
 </table></div>
 {{ source('区间来自同一方法的回测误差，只有 ' ~ f.backtest_weeks ~ ' 个样本，只反映大致范围。') }}
 {% set c.figure = c.figure + 1 %}
-<div class="caption">图 {{ c.figure }}　近 16 周实际（实线）和未来预测（虚线，灰色为 80% 区间）</div>
+<div class="caption">图 {{ c.figure }}　近 16 周实际（蓝色）和未来预测（橙色虚线，浅橙色为 80% 区间）</div>
 {{ chart }}
 {{ source() }}
 

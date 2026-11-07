@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -14,6 +14,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from .narrative import FACTOR_NAMES, fi, money, num, signed, verdict_ly
+from .warehouse import parse_week, week_of
 
 BOLD = re.compile(r"\*\*(.+?)\*\*")
 HERE = Path(__file__).parent
@@ -29,45 +30,74 @@ def rich(text):
 
 
 def delta(value, baseline=100):
-    """指数：低于基准用深红，其余黑色。数字本身就能看出高低，不依赖颜色。"""
+    """指数：高于基准绿色，低于基准红色，接近持平不着色。数字本身就能看出高低，不依赖颜色。"""
     if value is None:
         return Markup('<span class="flat">—</span>')
-    cls = "down" if value < baseline - 0.5 else "flat"
+    cls = "down" if value < baseline - 0.5 else "up" if value > baseline + 0.5 else "flat"
     return Markup(f'<span class="{cls}">{round(value)}</span>')
 
 
-def gap(value):
-    if value is None:
-        return Markup('<span class="flat">—</span>')
-    cls = "down" if value < -0.5 else "flat"
-    return Markup(f'<span class="{cls}">{round(value):+d}</span>')
-
-
 def spark(values, labels=None, width=156, height=42):
-    """单系列折线，末点标记；原生 <title> 提供悬停值。"""
+    """单系列折线，末点标记。给了周次标签时带刻度和网格线；原生 <title> 提供悬停值。"""
     points = [(i, v) for i, v in enumerate(values) if v is not None]
     if len(points) < 2:
         return Markup("")
     low, high = min(v for _, v in points), max(v for _, v in points)
     span = (high - low) or 1
+    left, bottom = (30, 18) if labels else (6, 7)
+
     def x(i):
-        return 6 + i * (width - 12) / (len(values) - 1)
+        return left + i * (width - left - 8) / (len(values) - 1)
 
     def y(v):
-        return height - 7 - (v - low) * (height - 14) / span
+        return height - bottom - (v - low) * (height - bottom - 8) / span
 
+    axis = ""
+    if labels:
+        ticks = [low, (low + high) / 2, high]
+        axis = "".join(f'<line x1="{left}" x2="{width - 8}" y1="{y(t):.1f}" y2="{y(t):.1f}" stroke="#e6e2d8" stroke-width="1"/>'
+                       f'<text x="{left - 4}" y="{y(t) + 3:.1f}" font-size="9" text-anchor="end" fill="#5b6673">{t:.0f}</text>' for t in ticks)
+        axis += "".join(f'<text x="{x(i):.1f}" y="{height - 4}" font-size="9" text-anchor="middle" fill="#5b6673">{w}</text>' for i, w in enumerate(labels))
     path = " ".join(f"{'M' if n == 0 else 'L'}{x(i):.1f} {y(v):.1f}" for n, (i, v) in enumerate(points))
     dots = "".join(
         f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="{3.5 if i == points[-1][0] else 9}" '
-        f'fill="{"var(--accent)" if i == points[-1][0] else "transparent"}">'
-        f"<title>vs LY {round(v)}</title></circle>" for i, v in points)
-    return Markup(f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" '
-                  f'aria-label="近四周 vs LY 趋势"><path d="{path}" fill="none" stroke="var(--accent)" '
-                  f'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>{dots}</svg>')
+        f'fill="{"var(--series)" if i == points[-1][0] else "transparent"}">'
+        f"<title>{round(v)}</title></circle>" for i, v in points)
+    return Markup(f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" aria-label="趋势折线">{axis}'
+                  f'<path d="{path}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>{dots}</svg>')
+
+
+def index_chart(overall, key, comp_key):
+    """IKEA 版的指数柱状图：财年累计、滚动 4 周、本周，橙色标记是对标。"""
+    rows = [("财年累计", overall["ytd"]), ("滚动 4 周", overall["r4"]), ("本周", overall["week"])]
+    values = [v for _, o in rows for v in (o[key], o[comp_key]) if v is not None]
+    if not values:
+        return Markup("")
+    width, height, top, base = 340, 190, 22, 164
+    scale = (base - top) / (max(values) * 1.05 or 1)
+    parts = [f'<line x1="14" x2="{width - 14}" y1="{base}" y2="{base}" stroke="#cfd6df"/>',
+             f'<line x1="{width - 74}" x2="{width - 52}" y1="10" y2="10" stroke="var(--series2)" stroke-width="2.5"/>'
+             f'<text x="{width - 46}" y="14" font-size="11" fill="#1c2430">对标</text>']
+    for n, (name, o) in enumerate(rows):
+        center = 62 + n * 108
+        value, comp = o[key], o[comp_key]
+        if value is not None:
+            h = value * scale
+            color = "--bar-down" if value < 99.5 else "--bar-up" if value > 100.5 else "--bar-flat"
+            parts.append(f'<rect x="{center - 21}" y="{base - h:.1f}" width="42" height="{h:.1f}" rx="2" fill="var({color})"><title>{name} {round(value)}</title></rect>')
+            label_y = base - h / 2 + 4 if h > 24 else base - h - 4
+            label_fill = "#ffffff" if h > 24 else "#1c2430"
+            parts.append(f'<text x="{center}" y="{label_y:.1f}" font-size="13" font-weight="700" text-anchor="middle" fill="{label_fill}">{round(value)}</text>')
+        if comp is not None:
+            yy = base - comp * scale
+            parts.append(f'<line x1="{center - 31}" x2="{center + 31}" y1="{yy:.1f}" y2="{yy:.1f}" stroke="var(--series2)" stroke-width="2.5"><title>对标 {round(comp)}</title></line>'
+                         f'<path d="M{center - 4} {yy - 1:.1f} L{center + 4} {yy - 1:.1f} L{center} {yy - 7:.1f} Z" fill="var(--series2)"/>')
+        parts.append(f'<text x="{center}" y="{base + 16}" font-size="12" text-anchor="middle" fill="#1c2430">{name}</text>')
+    return Markup(f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="指数柱状图">{"".join(parts)}</svg>')
 
 
 def contribution_bars(items):
-    """销售树对数分解：以 0 为基线的横向条。"""
+    """以 0 为基线的横向条：蓝色为正，橙色为负。"""
     if not items:
         return Markup("")
     top = max(abs(c["share"]) for c in items) or 1
@@ -75,16 +105,31 @@ def contribution_bars(items):
     for c in sorted(items, key=lambda c: -abs(c["share"])):
         w = abs(c["share"]) / top * 46
         side = f"left:50%;width:{w:.1f}%" if c["share"] >= 0 else f"right:50%;width:{w:.1f}%"
+        cls = "" if c["share"] >= 0 else ' class="neg"'
         rows.append(f'<div class="cbar"><span class="cname">{FACTOR_NAMES.get(c["factor"], c["factor"])}</span>'
-                    f'<span class="ctrack"><i style="{side}"></i></span>'
+                    f'<span class="ctrack"><i{cls} style="{side}"></i></span>'
                     f'<span class="cval">{c["share"]:+.0f}%</span></div>')
+    return Markup("".join(rows))
+
+
+def mix_bars(items):
+    """品类结构：本报告分析的品类用蓝色，其余用灰色。"""
+    if not items:
+        return Markup("")
+    top = max(x["share"] or 0 for x in items) or 1
+    rows = []
+    for x in items:
+        cls = "hbar selected" if x.get("selected") else "hbar"
+        name = html.escape(str(x["name"]))
+        rows.append(f'<div class="{cls}"><span>{name}</span><span class="track"><i style="width:{(x["share"] or 0) / top * 100:.1f}%"></i></span>'
+                    f'<span class="val">{x["share"]:.1f}% · vs LY {delta(x["sales_vs_ly"])}</span></div>')
     return Markup("".join(rows))
 
 
 _env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape(["html.j2"]),
                    trim_blocks=True, lstrip_blocks=True)
-_env.filters.update(fi=fi, signed=signed, money=money, num=num, rich=rich, delta=delta, gap=gap, spark=spark,
-                    bars=contribution_bars)
+_env.filters.update(fi=fi, signed=signed, money=money, num=num, rich=rich, delta=delta, spark=spark,
+                    bars=contribution_bars, mix_bars=mix_bars)
 
 
 def points(value):
@@ -125,14 +170,14 @@ def forecast_chart(history, rows, width=760, height=190):
     band = ""
     if known:
         edge = [f"{x(n):.1f},{y(r['high']):.1f}" for n, r in known] + [f"{x(n):.1f},{y(r['low']):.1f}" for n, r in reversed(known)]
-        band = f'<polygon points="{" ".join(edge)}" fill="#ddd"/>'
+        band = f'<polygon points="{" ".join(edge)}" fill="var(--series2-tint)"/>'
     weeks = [h["week"] for h in history] + [r["week"] for r in rows]
     ticks = "".join(f'<text x="{x(i):.1f}" y="{height - 6}" font-size="11" text-anchor="{"start" if i == 0 else "end" if i == count - 1 else "middle"}">{w}</text>'
                     for i, w in enumerate(weeks) if (i % 4 == 0 and i < count - 2) or i == count - 1)
     return Markup(f'<svg class="fchart" viewBox="0 0 {width} {height}" role="img" aria-label="近期实际和未来预测">{band}'
-                  f'<line x1="8" x2="{width - 8}" y1="{height - 22}" y2="{height - 22}" stroke="#999" stroke-width=".75"/>'
-                  f'<path d="{line}" fill="none" stroke="#111" stroke-width="1.6"/>'
-                  f'<path d="{dashed}" fill="none" stroke="#111" stroke-width="1.6" stroke-dasharray="5 4"/>{ticks}</svg>')
+                  f'<line x1="8" x2="{width - 8}" y1="{height - 22}" y2="{height - 22}" stroke="#cfd6df" stroke-width="1"/>'
+                  f'<path d="{line}" fill="none" stroke="var(--series)" stroke-width="2"/>'
+                  f'<path d="{dashed}" fill="none" stroke="var(--series2)" stroke-width="2" stroke-dasharray="5 4"/>{ticks}</svg>')
 
 
 def render_forecast(result, stores, categories, scope, source_name, synthetic=False, base="/forecast", scenario=None, scenario_error=None, lever_names=None, events=0):
@@ -158,31 +203,6 @@ def render_checkup(result, stores, categories, scope, source_name, synthetic=Fal
 
     return _env.get_template("checkup.html.j2").render(c=result, fmt=fmt, signed_value=signed_value, link=link, stores=stores, categories=categories,
                                                        scope=scope, base=base, source_name=source_name, synthetic=synthetic)
-
-
-def _note(item):
-    if item.get("potential"):
-        return f"潜力高：{item['reason']}"
-    parts = []
-    if item.get("core_vs_ly") is not None:
-        parts.append(f"排除新品后 vs LY {fi(item['core_vs_ly'])}")
-    if item.get("available") is not None:
-        parts.append(f"可售率 {fi(item['available'])}%")
-    if item.get("reason"):
-        parts.append(item["reason"])
-    return "；".join(parts)
-
-
-def _annotate(drill):
-    for direction in ("up", "down"):
-        for sub in drill[direction]:
-            sub["note_text"] = _note(sub)
-            for fam in sub["families"]:
-                fam["note_text"] = _note(fam)
-                for item in fam["items"]:
-                    item["note_text"] = _note(item)
-            for item in sub["others"]:
-                item["note_text"] = _note(item)
 
 
 def _titles(r):
@@ -223,10 +243,14 @@ def _follow_ups(r):
 def render_html(report, sections, queries=()):
     node_labels = {"sales": "Sales", "tickets": "Trans", "ab": "AB", "traffic": "Traffic", "cr": "CR",
                    "ai": "AI", "price": "Price/item", "qty": "Qty"}
-    _annotate(report["drill"])
+    nodes = report["tree"]["nodes"]
+    bottom = ["traffic", "cr", "ai", "price"] if "traffic" in nodes else ["ai", "price"]
+    tree_rows = [[k for k in row if k in nodes] for row in (["sales"], ["tickets", "qty", "ab"], bottom)]
+    monday = parse_week(report["week"])
+    week_labels = [week_of(monday - timedelta(days=7 * i))[-2:] for i in range(3, -1, -1)]
     return _env.get_template("report.html.j2").render(
         r=report, s=sections, queries=list(queries), node_labels=node_labels, titles=_titles(report), follow_ups=_follow_ups(report),
-        factor_names=FACTOR_NAMES, generated=datetime.now().strftime("%Y-%m-%d %H:%M"))
+        factor_names=FACTOR_NAMES, generated=datetime.now().strftime("%Y-%m-%d %H:%M"), tree_rows=tree_rows, week_labels=week_labels, index_chart=index_chart)
 
 
 def find_chrome():

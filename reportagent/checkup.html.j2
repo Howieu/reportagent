@@ -14,6 +14,7 @@ td a { color:inherit; }
 </head>
 <body>
 <main>
+{% set banner_text = 'wk' ~ c.week %}{% set banner_sub = scope ~ ' 经营体检' %}{% include "report_banner.html.j2" %}
 <h1>{{ scope }} 经营体检报告</h1>
 <p class="meta-line">检查周：第 {{ c.week }} 周（{{ c.period.start }} 至 {{ c.period.end }}）　指标：{{ c.metric_label }}　数据截至：{{ c.latest_date }}</p>
 <hr class="head-rule">
