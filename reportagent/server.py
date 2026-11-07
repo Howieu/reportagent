@@ -23,7 +23,7 @@ from .warehouse import DataUnavailable
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "ra_uid"
-REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src https: http:; form-action 'self'"
+REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; form-action 'self'"
 class RateLimiter:
     """按访客的滑动窗口限流，保护模型额度。ponytail: 单进程内存计数；多实例时换 Redis。"""
 

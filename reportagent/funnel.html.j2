@@ -5,15 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>漏斗分析报告 wk{{ f.week }}</title>
 <style>{% include "report_base.css.j2" %}
-.select { border-top:.75px solid var(--hair); border-bottom:.75px solid var(--hair); padding:8px 0; margin:12px 0; display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
-.select label { font-size:12.5px; display:block; }
-.select select,.select input { display:block; margin-top:2px; height:30px; min-width:150px; padding:0 6px; border:1px solid #888; background:#fff; font:inherit; font-size:13px; }
-.select button { height:30px; padding:0 14px; border:1px solid #111; background:#111; color:#fff; font:inherit; font-size:13px; cursor:pointer; }
-td a { color:inherit; }
 .crumbs { font-size:13px; margin:0 0 8px; }
 .fstep { display:grid; grid-template-columns:70px 1fr 190px; gap:10px; align-items:center; margin:4px 0; font-size:13px; }
-.ftrack { height:14px; background:var(--tint); border-radius:2px; }
-.ftrack i { display:block; height:100%; background:var(--series); border-radius:2px; min-width:2px; }
+.ftrack { height:12px; background:var(--surface-warm); border-radius:2px; }
+.ftrack i { display:block; height:100%; background:var(--data); border-radius:2px; min-width:2px; }
 .fconv { color:var(--muted); font-size:12.5px; padding-left:80px; }
 </style>
 </head>
@@ -21,18 +16,20 @@ td a { color:inherit; }
 <main>
 {% set t = f.total %}{% set S = t.steps %}{% set c = namespace(table=0, figure=0) %}
 {% macro source(extra='') %}<p class="source">数据来源：RetailRocket 公开行为数据，代码计算。{{ extra }}</p>{% endmacro %}
-{% set banner_text = 'wk' ~ f.week %}{% set banner_sub = '转化漏斗分析' %}{% include "report_banner.html.j2" %}
-<h1>电商转化漏斗分析报告</h1>
-<p class="meta-line">报告周期：第 {{ f.week }} 周（{{ f.period.start }} 至 {{ f.period.end }}）　数据截至：{{ f.latest_date }}</p>
-<hr class="head-rule">
+{% set mast_week = 'wk' ~ f.week %}{% set mast_eyebrow = '转化漏斗报告' %}{% set mast_title = '电商转化漏斗分析' %}
+{% set mast_meta = f.period.start ~ ' 至 ' ~ f.period.end ~ '　数据截至 ' ~ f.latest_date %}
+{% set mast_kpis = [{'label': S[0].name ~ '到' ~ S[-1].name ~ '整体转化', 'value': '%.2f%%' | format(t.overall or 0), 'note': '较上周 ' ~ pts((t.overall - t.overall_prev) if t.overall is not none and t.overall_prev is not none else none)},
+  {'label': S[0].name ~ ' UV', 'value': S[0].uv | num}, {'label': S[-1].name ~ ' UV', 'value': S[-1].uv | num}, {'label': '流失最大', 'value': f.biggest_drop.name, 'note': '转化 ' ~ ('%.2f%%' | format(f.biggest_drop.conv))}] %}
+{% include "report_banner.html.j2" %}
 
+<section class="panel">
 <h2>摘要</h2>
 <div class="summary">
   <p>1. <b>{{ S[0].name }}到{{ S[-1].name }}的整体转化为 {{ '%.2f%%' | format(t.overall or 0) }}</b>，较上周 {{ pts((t.overall - t.overall_prev) if t.overall is not none and t.overall_prev is not none else none) }}。</p>
   <p>2. <b>流失最大的是到{{ f.biggest_drop.name }}这一步</b>，转化 {{ '%.2f%%' | format(f.biggest_drop.conv) }}。</p>
   {% if f.opportunity %}<p>3. <b>流量较大但转化低于整体的{{ f.dimension_label }}</b>：{% for r in f.opportunity %}{{ r.name }}（UV 占比 {{ '%.1f%%' | format(r.share) }}，转化 {{ '%.2f%%' | format(r.overall or 0) }}）{{ '、' if not loop.last }}{% endfor %}。</p>{% endif %}
 </div>
-
+</section>
 <form class="select no-print" method="get" action="{{ base }}">
   <label>周次<input name="week" value="{{ f.week }}" pattern="\d{6}" required></label>
   <label>分析维度<select name="dimension">{% for k, v in f.dimensions.items() %}<option value="{{ k }}"{{ ' selected' if k == f.dimension }}>{{ v }}</option>{% endfor %}</select></label>
@@ -41,6 +38,7 @@ td a { color:inherit; }
 </form>
 {% if f.filters %}<p class="crumbs">当前范围：{% for k, v in f.filters.items() %}{{ f.dimensions[k] }} = {{ v }}{{ '，' if not loop.last }}{% endfor %}。<a class="no-print" href="{{ base }}?week={{ f.week }}">返回全部</a></p>{% endif %}
 
+<section class="panel flow">
 <h2>一、整体漏斗：{{ S[0].name }} {{ S[0].uv | num }} UV，最终{{ S[-1].name }} {{ S[-1].uv | num }} UV</h2>
 {% set c.table = c.table + 1 %}
 <div class="caption">表 {{ c.table }}　各步骤 UV 与转化</div>
@@ -48,7 +46,6 @@ td a { color:inherit; }
   <tr><th>步骤</th><th>UV</th><th>周环比（上周=100）</th><th>上一步转化</th><th>较上周</th><th>前 4 周转化</th></tr>
   {% for s in S %}<tr><td>{{ s.name }}</td><td>{{ s.uv | num }}</td><td>{{ s.wow | delta }}</td><td>{{ ('%.2f%%' | format(s.conv)) if s.conv is not none else '—' }}</td><td>{{ pts(s.conv_change) }}</td><td>{{ ('%.2f%%' | format(s.conv_r4)) if s.conv_r4 is not none else '—' }}</td></tr>{% endfor %}
 </table></div>
-{{ source() }}
 {% set c.figure = c.figure + 1 %}
 <div class="caption">图 {{ c.figure }}　漏斗形态</div>
 {% set top = S[0].uv or 1 %}
@@ -56,12 +53,14 @@ td a { color:inherit; }
   {% if s.conv is not none %}<div class="fconv">↓ {{ '%.2f%%' | format(s.conv) }}</div>{% endif %}
   <div class="fstep"><span>{{ s.name }}</span><span class="ftrack"><i style="width:{{ '%.2f' | format(s.uv / top * 100) }}%"></i></span><span>{{ s.uv | num }}（占首步 {{ '%.2f%%' | format(s.uv / top * 100) }}）</span></div>
 {% endfor %}
-{{ source() }}
 {% set c.figure = c.figure + 1 %}
 <div class="caption">图 {{ c.figure }}　近 8 周整体转化</div>
-{{ f.trend | map(attribute='overall') | list | spark(width=640, height=70) }}
+{% set trend_weeks = [] %}{% for x in f.trend %}{% if trend_weeks.append(x.week[-2:]) %}{% endif %}{% endfor %}
+{{ f.trend | map(attribute='overall') | list | spark(trend_weeks, 640, 150, none, '{:.2f}%') }}
 <p class="source">{% for x in f.trend %}{{ x.week[-2:] }} 周 {{ '%.2f%%' | format(x.overall or 0) }}{{ '　' if not loop.last }}{% endfor %}</p>
+</section>
 
+<section class="panel">
 <h2>二、按{{ f.dimension_label }}拆分{% if f.next_dimension %}（点名称可下钻到{{ f.dimensions[f.next_dimension] }}）{% endif %}</h2>
 {% set c.table = c.table + 1 %}
 <div class="caption">表 {{ c.table }}　分{{ f.dimension_label }}漏斗</div>
@@ -75,13 +74,18 @@ td a { color:inherit; }
   {% endfor %}
 </table></div>
 {{ source('按 UV 排序' ~ ('，显示前 40 行，共 ' ~ (f.rows | length) ~ ' 行。' if f.rows | length > 40 else '。')) }}
+</section>
 
+<section class="panel">
 <h2>附：口径与方法</h2>
 <ul class="plain note">
+  <li>数据来源：RetailRocket 公开行为数据，所有数字由代码计算。</li>
   <li>{{ f.note }}</li>
   <li>同一访客可能落在多个分组，所以各分组 UV 之和可能大于合计。</li>
 </ul>
 <details><summary>查看执行的 {{ f.queries | length }} 条 SQL</summary>{% for q in f.queries %}<p><b>{{ q.purpose }}</b>（{{ q.ms }} ms）</p><pre>{{ q.sql }}</pre>{% endfor %}</details>
+</section>
+
 </main>
 </body>
 </html>

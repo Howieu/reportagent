@@ -1,6 +1,8 @@
 """报告渲染：HTML（Jinja2 自动转义）和 PDF（本机 Chrome 无头打印）。"""
 
+import base64
 import html
+import math
 import os
 import re
 import shutil
@@ -13,7 +15,7 @@ from urllib.parse import urlencode
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from .narrative import FACTOR_NAMES, fi, money, num, signed, verdict_ly
+from .narrative import FACTOR_NAMES, fi, money, num, signed
 from .warehouse import parse_week, week_of
 
 BOLD = re.compile(r"\*\*(.+?)\*\*")
@@ -37,62 +39,73 @@ def delta(value, baseline=100):
     return Markup(f'<span class="{cls}">{round(value)}</span>')
 
 
-def spark(values, labels=None, width=156, height=42):
-    """单系列折线，末点标记。给了周次标签时带刻度和网格线；原生 <title> 提供悬停值。"""
+def _status(value, baseline=100):
+    """指数对基准的状态，图表和文字共用同一套颜色。"""
+    return "--down" if value < baseline - 0.5 else "--up" if value > baseline + 0.5 else "--flat"
+
+
+def _ticks(low, high, count=3):
+    """取整的坐标刻度，步长为 1、2、5 乘 10 的幂，刻度范围覆盖 low 到 high。"""
+    rough = (high - low) / count or 1
+    power = 10 ** math.floor(math.log10(rough))
+    step = next(k * power for k in (1, 2, 5, 10) if k * power >= rough)
+    first, last = math.floor(low / step), math.ceil(high / step)
+    return [n * step for n in range(first, last + 1)]
+
+
+def spark(values, labels, width=156, height=42, baseline=100, fmt="{:.0f}"):
+    """趋势折线：左侧数值轴、浅网格、深蓝细线。baseline 画成深色基准线；没有基准线时在末点标值。"""
     points = [(i, v) for i, v in enumerate(values) if v is not None]
     if len(points) < 2:
         return Markup("")
-    low, high = min(v for _, v in points), max(v for _, v in points)
-    span = (high - low) or 1
-    left, bottom = (30, 18) if labels else (6, 7)
+    series = [v for _, v in points]
+    ticks = _ticks(min(*series, baseline) if baseline is not None else min(series),
+                   max(*series, baseline) if baseline is not None else max(series))
+    left, right, top, bottom = 8 + 6 * max(len(fmt.format(t)) for t in ticks), 8, 8, 18
 
     def x(i):
-        return left + i * (width - left - 8) / (len(values) - 1)
+        return left + 6 + i * (width - left - right - 6) / (len(values) - 1)
 
     def y(v):
-        return height - bottom - (v - low) * (height - bottom - 8) / span
+        return height - bottom - (v - ticks[0]) * (height - bottom - top) / (ticks[-1] - ticks[0])
 
-    axis = ""
-    if labels:
-        ticks = [low, (low + high) / 2, high]
-        axis = "".join(f'<line x1="{left}" x2="{width - 8}" y1="{y(t):.1f}" y2="{y(t):.1f}" stroke="#e6e2d8" stroke-width="1"/>'
-                       f'<text x="{left - 4}" y="{y(t) + 3:.1f}" font-size="9" text-anchor="end" fill="#5b6673">{t:.0f}</text>' for t in ticks)
-        axis += "".join(f'<text x="{x(i):.1f}" y="{height - 4}" font-size="9" text-anchor="middle" fill="#5b6673">{w}</text>' for i, w in enumerate(labels))
+    grid = "".join(f'<line x1="{left}" x2="{width}" y1="{y(t):.1f}" y2="{y(t):.1f}" stroke="var(--border)" stroke-width="1"/>'
+                   f'<text x="{left - 5}" y="{y(t) + 3.5:.1f}" font-size="10" text-anchor="end" fill="var(--muted)">{fmt.format(t)}</text>' for t in ticks)
+    if baseline is not None:
+        grid += f'<line x1="{left}" x2="{width}" y1="{y(baseline):.1f}" y2="{y(baseline):.1f}" stroke="var(--border-strong)" stroke-width="1"/>'
+    grid += "".join(f'<text x="{x(i):.1f}" y="{height - 4}" font-size="10" text-anchor="middle" fill="var(--muted)">{w}</text>' for i, w in enumerate(labels))
     path = " ".join(f"{'M' if n == 0 else 'L'}{x(i):.1f} {y(v):.1f}" for n, (i, v) in enumerate(points))
-    dots = "".join(
-        f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="{3.5 if i == points[-1][0] else 9}" '
-        f'fill="{"var(--series)" if i == points[-1][0] else "transparent"}">'
-        f"<title>{round(v)}</title></circle>" for i, v in points)
-    return Markup(f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" aria-label="趋势折线">{axis}'
-                  f'<path d="{path}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>{dots}</svg>')
+    last = points[-1][0]
+    dots = "".join(f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="{3 if i == last else 2.2}" fill="{"var(--line)" if i == last else "var(--surface)"}" stroke="var(--line)" stroke-width="1.5"><title>{fmt.format(v)}</title></circle>' for i, v in points)
+    if baseline is None:
+        dots += f'<text x="{x(last):.1f}" y="{y(series[-1]) - 8:.1f}" font-size="11" font-weight="600" text-anchor="end" fill="var(--fg)">{fmt.format(series[-1])}</text>'
+    return Markup(f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" aria-label="趋势折线">{grid}'
+                  f'<path d="{path}" fill="none" stroke="var(--line)" stroke-width="1.75" stroke-linejoin="round"/>{dots}</svg>')
 
 
 def index_chart(overall, key, comp_key):
-    """IKEA 版的指数柱状图：财年累计、滚动 4 周、本周，橙色标记是对标。"""
+    """IKEA 版的指数柱状图：财年累计、滚动 4 周、本周，黑色短线是对标，横线是 100。"""
     rows = [("财年累计", overall["ytd"]), ("滚动 4 周", overall["r4"]), ("本周", overall["week"])]
     values = [v for _, o in rows for v in (o[key], o[comp_key]) if v is not None]
     if not values:
         return Markup("")
-    width, height, top, base = 340, 190, 22, 164
-    scale = (base - top) / (max(values) * 1.05 or 1)
-    parts = [f'<line x1="14" x2="{width - 14}" y1="{base}" y2="{base}" stroke="#cfd6df"/>',
-             f'<line x1="{width - 74}" x2="{width - 52}" y1="10" y2="10" stroke="var(--series2)" stroke-width="2.5"/>'
-             f'<text x="{width - 46}" y="14" font-size="11" fill="#1c2430">对标</text>']
+    width, height, top, base = 300, 176, 24, 152
+    scale = (base - top) / max(*values, 100)
+    parts = [f'<line x1="0" x2="{width}" y1="{base - 100 * scale:.1f}" y2="{base - 100 * scale:.1f}" stroke="var(--border-strong)" stroke-width="1"/>',
+             f'<text x="{width}" y="{base - 100 * scale - 4:.1f}" font-size="10" text-anchor="end" fill="var(--muted)">100</text>',
+             f'<line x1="0" x2="{width}" y1="{base}" y2="{base}" stroke="var(--border-strong)" stroke-width="1"/>']
     for n, (name, o) in enumerate(rows):
-        center = 62 + n * 108
+        center = 50 + n * 92
         value, comp = o[key], o[comp_key]
         if value is not None:
             h = value * scale
-            color = "--bar-down" if value < 99.5 else "--bar-up" if value > 100.5 else "--bar-flat"
-            parts.append(f'<rect x="{center - 21}" y="{base - h:.1f}" width="42" height="{h:.1f}" rx="2" fill="var({color})"><title>{name} {round(value)}</title></rect>')
-            label_y = base - h / 2 + 4 if h > 24 else base - h - 4
-            label_fill = "#ffffff" if h > 24 else "#1c2430"
-            parts.append(f'<text x="{center}" y="{label_y:.1f}" font-size="13" font-weight="700" text-anchor="middle" fill="{label_fill}">{round(value)}</text>')
+            parts.append(f'<path d="M{center - 16} {base} V{base - h + 4:.1f} Q{center - 16} {base - h:.1f} {center - 12} {base - h:.1f} H{center + 12} Q{center + 16} {base - h:.1f} {center + 16} {base - h + 4:.1f} V{base} Z" fill="var({_status(value)})"><title>{name} {round(value)}</title></path>')
+            parts.append(f'<text x="{center}" y="{base - h - 5:.1f}" font-size="13" font-weight="600" text-anchor="middle" fill="var(--fg)">{round(value)}</text>')
         if comp is not None:
             yy = base - comp * scale
-            parts.append(f'<line x1="{center - 31}" x2="{center + 31}" y1="{yy:.1f}" y2="{yy:.1f}" stroke="var(--series2)" stroke-width="2.5"><title>对标 {round(comp)}</title></line>'
-                         f'<path d="M{center - 4} {yy - 1:.1f} L{center + 4} {yy - 1:.1f} L{center} {yy - 7:.1f} Z" fill="var(--series2)"/>')
-        parts.append(f'<text x="{center}" y="{base + 16}" font-size="12" text-anchor="middle" fill="#1c2430">{name}</text>')
+            parts.append(f'<line x1="{center - 25}" x2="{center + 25}" y1="{yy:.1f}" y2="{yy:.1f}" stroke="var(--fg)" stroke-width="2"><title>对标 {round(comp)}</title></line>')
+            parts.append(f'<text x="{center + 27}" y="{yy + 3.5:.1f}" font-size="10" fill="var(--muted)">{round(comp)}</text>')
+        parts.append(f'<text x="{center}" y="{base + 16}" font-size="12" text-anchor="middle" fill="var(--muted)">{name}</text>')
     return Markup(f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="指数柱状图">{"".join(parts)}</svg>')
 
 
@@ -130,6 +143,8 @@ _env = Environment(loader=FileSystemLoader(HERE), autoescape=select_autoescape([
                    trim_blocks=True, lstrip_blocks=True)
 _env.filters.update(fi=fi, signed=signed, money=money, num=num, rich=rich, delta=delta, spark=spark,
                     bars=contribution_bars, mix_bars=mix_bars)
+# 横幅实景图（CC0，来源 rawpixel.com/image/5941607，裁切并轻微虚化）。内嵌成 data URI，PDF 和离线 HTML 都不依赖外部图片；换图只需替换这个文件。
+_env.globals["scene_image"] = "data:image/jpeg;base64," + base64.b64encode((HERE / "report_scene.jpg").read_bytes()).decode()
 
 
 def points(value):
@@ -149,18 +164,19 @@ def render_funnel(result, base="/funnel"):
     return _env.get_template("funnel.html.j2").render(f=result, base=base, drill=drill, pts=points)
 
 
-def forecast_chart(history, rows, width=760, height=190):
-    """近期实际（实线）+ 预测（虚线）+ 80% 区间（灰带）。"""
+def forecast_chart(history, rows, fmt, width=760, height=230):
+    """近期实际（实线）+ 预测（虚线）+ 80% 区间（浅色带），带数值轴和浅网格。"""
     actual = [h["value"] for h in history]
     bounds = [v for r in rows for v in (r["forecast"], r["low"], r["high"]) if v is not None]
-    top = max([*actual, *bounds, 1]) * 1.05
+    ticks = _ticks(0, max([*actual, *bounds, 1]), 4)
     count = len(actual) + len(rows)
+    left, right, top, bottom = 8 + 7 * max(len(fmt(t)) for t in ticks), 8, 8, 22
 
     def x(i):
-        return 8 + i * (width - 16) / (count - 1)
+        return left + 6 + i * (width - left - right - 6) / (count - 1)
 
     def y(v):
-        return height - 22 - v / top * (height - 32)
+        return height - bottom - v * (height - bottom - top) / ticks[-1]
 
     start = len(actual) - 1
     line = " ".join(f"{'M' if i == 0 else 'L'}{x(i):.1f} {y(v):.1f}" for i, v in enumerate(actual))
@@ -170,14 +186,15 @@ def forecast_chart(history, rows, width=760, height=190):
     band = ""
     if known:
         edge = [f"{x(n):.1f},{y(r['high']):.1f}" for n, r in known] + [f"{x(n):.1f},{y(r['low']):.1f}" for n, r in reversed(known)]
-        band = f'<polygon points="{" ".join(edge)}" fill="var(--series2-tint)"/>'
+        band = f'<polygon points="{" ".join(edge)}" fill="var(--data-alt-tint)"/>'
+    grid = "".join(f'<line x1="{left}" x2="{width}" y1="{y(t):.1f}" y2="{y(t):.1f}" stroke="{"var(--border-strong)" if t == 0 else "var(--border)"}" stroke-width="1"/>'
+                   f'<text x="{left - 6}" y="{y(t) + 3.5:.1f}" font-size="11" text-anchor="end" fill="var(--muted)">{fmt(t)}</text>' for t in ticks)
     weeks = [h["week"] for h in history] + [r["week"] for r in rows]
-    ticks = "".join(f'<text x="{x(i):.1f}" y="{height - 6}" font-size="11" text-anchor="{"start" if i == 0 else "end" if i == count - 1 else "middle"}">{w}</text>'
-                    for i, w in enumerate(weeks) if (i % 4 == 0 and i < count - 2) or i == count - 1)
-    return Markup(f'<svg class="fchart" viewBox="0 0 {width} {height}" role="img" aria-label="近期实际和未来预测">{band}'
-                  f'<line x1="8" x2="{width - 8}" y1="{height - 22}" y2="{height - 22}" stroke="#cfd6df" stroke-width="1"/>'
-                  f'<path d="{line}" fill="none" stroke="var(--series)" stroke-width="2"/>'
-                  f'<path d="{dashed}" fill="none" stroke="var(--series2)" stroke-width="2" stroke-dasharray="5 4"/>{ticks}</svg>')
+    labels = "".join(f'<text x="{x(i):.1f}" y="{height - 6}" font-size="11" fill="var(--muted)" text-anchor="{"end" if i == count - 1 else "middle"}">{w}</text>'
+                     for i, w in enumerate(weeks) if (i % 4 == 0 and i < count - 2) or i == count - 1)
+    return Markup(f'<svg class="fchart" viewBox="0 0 {width} {height}" role="img" aria-label="近期实际和未来预测">{grid}{band}'
+                  f'<path d="{line}" fill="none" stroke="var(--line)" stroke-width="1.75" stroke-linejoin="round"/>'
+                  f'<path d="{dashed}" fill="none" stroke="var(--data-alt)" stroke-width="1.75" stroke-dasharray="5 4"/>{labels}</svg>')
 
 
 def render_forecast(result, stores, categories, scope, source_name, synthetic=False, base="/forecast", scenario=None, scenario_error=None, lever_names=None, events=0):
@@ -188,7 +205,7 @@ def render_forecast(result, stores, categories, scope, source_name, synthetic=Fa
 
     return _env.get_template("forecast.html.j2").render(
         f=result, fmt=fmt, signed_value=signed_value, stores=stores, categories=categories, scope=scope, base=base,
-        source_name=source_name, synthetic=synthetic, chart=forecast_chart(result["history"], result["rows"]),
+        source_name=source_name, synthetic=synthetic, chart=forecast_chart(result["history"], result["rows"], fmt),
         scenario=scenario, scenario_error=scenario_error, lever_names=lever_names or {}, events=events)
 
 
@@ -206,12 +223,8 @@ def render_checkup(result, stores, categories, scope, source_name, synthetic=Fal
 
 
 def _titles(r):
-    """标题写结论：只读标题也能看懂整份报告。"""
+    """商品和区域两节没有文字段落，用一句结论开头。"""
     labels, week = r["labels"], r["overall"]["week"]
-    channels = [c for c in r["channels"] if c["sales_vs_ly"] is not None]
-    top_channel = max(channels, key=lambda c: c["sales_vs_ly"]) if channels else None
-    driver_key = r["tree"]["driver"]
-    driver = next((c for c in r["tree"]["contributions"] if c["factor"] == driver_key), None)
     sales = week["sales_vs_ly"] or 100
     subs = r["drill"]["up"] if sales >= 100 else r["drill"]["down"]
     word = "上升" if sales >= 100 else "下降"
@@ -221,11 +234,8 @@ def _titles(r):
     drill = (f"{word}主要来自{labels['subcategory']} {subs[0]['name']}（贡献 {fi(subs[0]['contribution'])}%）" if subs
              else f"排除新品后没有{labels['subcategory']}朝{word}方向变化，变化主要来自新品")
     return {
-        "overall": f"整体表现：Sales {verdict_ly(week['sales_vs_ly'])}（vs LY {fi(week['sales_vs_ly'])}），排名第 {week['rank']}",
-        "channel": (f"分{labels['channel']}：{top_channel['channel']}同比最高（vs LY {fi(top_channel['sales_vs_ly'])}）" if top_channel else f"分{labels['channel']}表现"),
-        "tree": (f"驱动拆解：{FACTOR_NAMES.get(driver_key, driver_key)} 是 Sales 变化的最大因素（贡献 {driver['share']:.0f}%）" if driver else "驱动拆解"),
-        "drill": f"商品归因：{drill}",
-        "region": (f"区域对比：{best['name']}同比最高（{fi(best['sales_vs_ly'])}），{worst['name']}最低（{fi(worst['sales_vs_ly'])}）" if best and best is not worst else "区域对比"),
+        "drill": f"{drill}。",
+        "region": (f"{best['name']}同比最高（vs LY {fi(best['sales_vs_ly'])}），{worst['name']}最低（vs LY {fi(worst['sales_vs_ly'])}）。" if best and best is not worst else ""),
     }
 
 

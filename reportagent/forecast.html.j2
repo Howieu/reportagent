@@ -5,32 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ f.metric_label }}预测 wk{{ f.origin }}</title>
 <style>{% include "report_base.css.j2" %}
-.select { border-top:.75px solid var(--hair); border-bottom:.75px solid var(--hair); padding:8px 0; margin:12px 0; display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
-.select label { font-size:12.5px; display:block; }
-.select select,.select input { display:block; margin-top:2px; height:30px; min-width:130px; padding:0 6px; border:1px solid #888; background:#fff; font:inherit; font-size:13px; }
-.select button { height:30px; padding:0 14px; border:1px solid #111; background:#111; color:#fff; font:inherit; font-size:13px; cursor:pointer; }
-.fchart { width:100%; display:block; }
 .cbar { grid-template-columns:128px 1fr 54px; }
-.fchart { background:var(--card); border-radius:4px; }
 </style>
 </head>
 <body>
 <main>
 {% set first = f.rows[0] %}{% set c = namespace(table=0, figure=0) %}
 {% macro source(extra='') %}<p class="source">数据来源：{{ source_name }}，代码计算。{{ extra }}</p>{% endmacro %}
-{% set banner_text = 'wk' ~ f.origin %}{% set banner_sub = scope ~ ' ' ~ f.metric_label ~ '预测' %}{% include "report_banner.html.j2" %}
-<h1>{{ scope }} {{ f.metric_label }}预测报告</h1>
-<p class="meta-line">预测起点：第 {{ f.origin }} 周（{{ f.origin_period.start }} 至 {{ f.origin_period.end }}）　数据截至：{{ f.latest_date }}</p>
-<hr class="head-rule">
 {% if synthetic %}<div class="synthetic">合成演示数据，不代表任何真实业务</div>{% endif %}
+{% set mast_week = 'wk' ~ f.origin %}{% set mast_eyebrow = f.metric_label ~ '预测报告' %}{% set mast_title = scope %}
+{% set mast_meta = '预测起点 ' ~ f.origin_period.start ~ ' 至 ' ~ f.origin_period.end ~ '　数据截至 ' ~ f.latest_date %}
+{% set mast_kpis = [{'label': '第 ' ~ first.week ~ ' 周预计' ~ f.metric_label, 'value': fmt(first.forecast), 'note': ('80% 区间 ' ~ fmt(first.low) ~ ' 至 ' ~ fmt(first.high)) if first.low is not none else ''},
+  {'label': 'vs LY', 'value': first.vs_ly | delta}, {'label': '数字来源', 'value': '模型' if first.beats else '基线'}, {'label': '回测误差', 'value': '%.1f%%' | format(first.model_wape if first.beats else first.baseline_wape), 'note': '近 ' ~ f.backtest_weeks ~ ' 周'}] %}
+{% include "report_banner.html.j2" %}
 
+<section class="panel">
 <h2>摘要</h2>
 <div class="summary">
   <p>1. <b>第 {{ first.week }} 周{{ f.metric_label }}预计 {{ fmt(first.forecast) }}</b>{% if first.low is not none %}，80% 区间 {{ fmt(first.low) }} 至 {{ fmt(first.high) }}{% endif %}{% if first.vs_ly is not none %}，vs LY {{ first.vs_ly | fi }}{% endif %}。</p>
   <p>2. <b>{% if first.beats %}这个数字来自模型{% else %}这个数字来自基线（{{ first.baseline_name }}）{% endif %}</b>：近 {{ f.backtest_weeks }} 周回测，{% if first.model_wape is not none %}模型误差 {{ '%.1f%%' | format(first.model_wape) }}，{% endif %}最好的基线误差 {{ '%.1f%%' | format(first.baseline_wape) }}。{% if not f.model_available %}当前环境无法加载模型，只提供基线。{% elif not first.beats %}模型没有赢过基线，所以不采用模型的数字。{% endif %}</p>
   {% if f.shap %}{% set top = f.shap['items'][0] %}<p>3. <b>对模型预测影响最大的因素是{{ top.factor }}</b>（{{ signed_value(top.value) }}）。这是对模型的解释，不代表因果。</p>{% endif %}
 </div>
-
+</section>
 <form class="select no-print" method="get" action="{{ base }}">
   <label>{{ f.labels.store or '门店' }}<select name="store"><option value="">全部</option>{% for s in stores %}<option value="{{ s.id }}"{{ ' selected' if s.id == f.store }}>{{ s.name }}</option>{% endfor %}</select></label>
   <label>{{ f.labels.category or '品类' }}<select name="category"><option value="">全部</option>{% for x in categories %}<option value="{{ x }}"{{ ' selected' if x == f.category }}>{{ x }}</option>{% endfor %}</select></label>
@@ -39,6 +35,7 @@
 </form>
 {% if f.origin_note %}<p class="note">{{ f.origin_note }}。</p>{% endif %}
 
+<section class="panel">
 <h2>一、未来 {{ f.rows | length }} 周预测</h2>
 {% set c.table = c.table + 1 %}
 <div class="caption">表 {{ c.table }}　逐周预测</div>
@@ -50,8 +47,9 @@
 {% set c.figure = c.figure + 1 %}
 <div class="caption">图 {{ c.figure }}　近 16 周实际（蓝色）和未来预测（橙色虚线，浅橙色为 80% 区间）</div>
 {{ chart }}
-{{ source() }}
+</section>
 
+<section class="panel">
 <h2>二、回测：模型是否赢过简单基线</h2>
 {% set c.table = c.table + 1 %}
 <div class="caption">表 {{ c.table }}　各预测步长的回测误差（WAPE，越低越好）</div>
@@ -66,8 +64,9 @@
   <tr><th>周次</th><th>实际</th><th>模型</th><th>{{ first.baseline_name }}</th><th>判断</th></tr>
   {% for b in f.backtest %}<tr><td>{{ b.week }}</td><td>{{ fmt(b.actual) }}</td><td>{{ fmt(b.model) if b.model is not none else '—' }}</td><td>{{ fmt(b.baseline) }}</td><td>{{ '明显高于预期' if b.flag == 'up' else '明显低于预期' if b.flag == 'down' else '正常' }}</td></tr>{% endfor %}
 </table></div>
-{{ source() }}
+</section>
 
+<section class="panel">
 <h2>三、SHAP 归因：模型为什么给出下周这个预测</h2>
 {% if f.shap %}
 {% if not first.beats %}<p class="note">这一步长模型没有赢过基线，表 1 用的是基线数字。下面解释的是模型自己的预测 {{ fmt(f.shap.model) }}，只作参考。</p>{% endif %}
@@ -87,7 +86,9 @@
 {% else %}
 <p class="note">当前环境无法加载模型，没有 SHAP 归因。{% if f.model_error %}原因：{{ f.model_error }}{% endif %}</p>
 {% endif %}
+</section>
 
+<section class="panel">
 <h2>四、情景试算：下周 {{ first.week }} 如果单量或单件价值变化</h2>
 <form class="select no-print" method="get" action="{{ base }}">
   {% if f.store %}<input type="hidden" name="store" value="{{ f.store }}">{% endif %}{% if f.category %}<input type="hidden" name="category" value="{{ f.category }}">{% endif %}<input type="hidden" name="metric" value="{{ f.metric }}">
@@ -105,15 +106,20 @@
 {% else %}
 <p class="note">填一个变化幅度，查看结果和这个幅度在历史上有多常见。</p>
 {% endif %}
+</section>
 
+<section class="panel">
 <h2>附：口径与方法</h2>
 <ul class="plain note">
+  <li>数据来源：{{ source_name }}，所有数字由代码计算。</li>
   <li>明细、{{ f.labels.store or '门店' }}合计、{{ f.labels.category or '品类' }}合计和全部合计都是序列，一起训练；提前 1 到 {{ f.rows | length }} 周各一个 LightGBM 模型，每个范围用自己的序列预测，所以各范围的预测不保证严格相加。</li>
   <li>防泄漏：特征只用预测起点及之前的数据，训练样本的目标周不晚于训练截止周，不使用任何同期指标。</li>
   <li>SHAP 用 LightGBM 内置的精确 TreeSHAP。它说明模型依赖什么，不代表改变这个因素就会带来同样的变化。</li>
   <li>{% if events %}已使用语义配置里的活动日历（{{ events }} 个）。{% else %}没有配置活动日历。{% endif %}没有客流和库存特征，无法预判它们带来的波动。</li>
 </ul>
 <details><summary>查看执行的 {{ f.queries | length }} 条 SQL</summary>{% for q in f.queries %}<p><b>{{ q.purpose }}</b>（{{ q.ms }} ms，{{ q.rows }} 行）</p><pre>{{ q.sql[:1500] }}{% if q.sql | length > 1500 %}……（已截断，同样的条件聚合按周重复）{% endif %}</pre>{% endfor %}</details>
+</section>
+
 </main>
 </body>
 </html>

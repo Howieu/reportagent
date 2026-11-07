@@ -1,11 +1,9 @@
-<div class="banner">
-<svg viewBox="0 0 1000 150" preserveAspectRatio="xMidYMid slice" role="img" aria-label="{{ banner_text }}">
-  <defs><linearGradient id="bannerfill" x1="0" y1="0" x2="1" y2="0.4"><stop offset="0" stop-color="#0b3f7a"/><stop offset="0.6" stop-color="#1f5fbf"/><stop offset="1" stop-color="#2f8f9d"/></linearGradient></defs>
-  <rect width="1000" height="150" fill="url(#bannerfill)"/>
-  {% for h in [34, 48, 42, 60, 54, 72, 66, 84, 78, 96, 90, 108, 102, 120] %}<rect x="{{ 470 + loop.index0 * 38 }}" y="{{ 150 - h }}" width="24" height="{{ h }}" fill="#ffffff" opacity="0.13"/>{% endfor %}
-  <polyline points="482,108 558,92 634,72 710,58 786,44 862,30 958,12" fill="none" stroke="#ffd54a" stroke-width="3"/>
-  <circle cx="958" cy="12" r="5" fill="#ffd54a"/>
-  <text x="40" y="84" font-size="46" font-weight="700" fill="#ffd54a" font-family="Arial, sans-serif">{{ banner_text }}</text>
-  <text x="42" y="116" font-size="18" fill="#ffffff" font-family="Arial, KaiTi, STKaiti, sans-serif">{{ banner_sub }}</text>
-</svg>
-</div>
+<header class="masthead">
+  <div class="scene"><img src="{{ scene_image }}" alt=""><span class="scene-tag">{{ mast_week }}</span></div>
+  <div class="mast-body">
+    <p class="eyebrow">{{ mast_eyebrow }}</p>
+    <h1>{{ mast_title }}</h1>
+    <p class="meta-line">{{ mast_meta }}</p>
+    <div class="kpis">{% for k in mast_kpis %}<div class="kpi"><span class="kpi-label">{{ k.label }}</span><span class="kpi-value">{{ k.value }}</span>{% if k.note %}<span class="kpi-note">{{ k.note }}</span>{% endif %}</div>{% endfor %}</div>
+  </div>
+</header>
