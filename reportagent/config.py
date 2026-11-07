@@ -3,6 +3,7 @@
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -75,6 +76,7 @@ class Semantic:
     data_note: str = ""
     report_source: str = ""
     examples: tuple = ()
+    events: tuple = ()  # 活动日历 (名称, 开始, 结束)
 
     def has(self, source):
         return source in self.sources
@@ -105,6 +107,20 @@ def _source(name, raw):
         if not IDENT.match(str(col)):
             raise ConfigError(f"非法字段名: {col}")
     return Source(table=table, columns=raw, segments=segments, steps=steps, dimensions=dimensions, note=note)
+
+
+def _events(raw):
+    out = []
+    for item in raw or ():
+        try:
+            start = date.fromisoformat(str(item["start"]))
+            end = date.fromisoformat(str(item.get("end", item["start"])))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ConfigError(f"calendar.events 格式应为 {{name, start, end}}，日期 YYYY-MM-DD: {item}") from exc
+        if start > end:
+            raise ConfigError(f"calendar.events 开始晚于结束: {item}")
+        out.append((str(item.get("name", "")), start, end))
+    return tuple(out)
 
 
 def load_semantic(path) -> Semantic:
@@ -140,6 +156,7 @@ def load_semantic(path) -> Semantic:
         data_note=str(raw.get("data_note", "")),
         report_source=str(raw.get("report_source", "")),
         examples=tuple(raw.get("examples") or ()),
+        events=_events(cal.get("events")),
         synonyms={str(k): str(v) for k, v in (raw.get("synonyms") or {}).items()},
     )
 

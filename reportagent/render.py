@@ -135,7 +135,7 @@ def forecast_chart(history, rows, width=760, height=190):
                   f'<path d="{dashed}" fill="none" stroke="#111" stroke-width="1.6" stroke-dasharray="5 4"/>{ticks}</svg>')
 
 
-def render_forecast(result, stores, categories, scope, source_name, synthetic=False, base="/forecast"):
+def render_forecast(result, stores, categories, scope, source_name, synthetic=False, base="/forecast", scenario=None, scenario_error=None, lever_names=None, events=0):
     fmt = result["fmt"]
 
     def signed_value(v):
@@ -143,7 +143,21 @@ def render_forecast(result, stores, categories, scope, source_name, synthetic=Fa
 
     return _env.get_template("forecast.html.j2").render(
         f=result, fmt=fmt, signed_value=signed_value, stores=stores, categories=categories, scope=scope, base=base,
-        source_name=source_name, synthetic=synthetic, chart=forecast_chart(result["history"], result["rows"]))
+        source_name=source_name, synthetic=synthetic, chart=forecast_chart(result["history"], result["rows"]),
+        scenario=scenario, scenario_error=scenario_error, lever_names=lever_names or {}, events=events)
+
+
+def render_checkup(result, stores, categories, scope, source_name, synthetic=False, base="/checkup"):
+    fmt = result["fmt"]
+
+    def signed_value(v):
+        return ("+" if v >= 0 else "") + fmt(v)
+
+    def link(item):
+        return "/forecast?" + urlencode({"store": item["store"], "category": item["category"], "metric": result["metric"]})
+
+    return _env.get_template("checkup.html.j2").render(c=result, fmt=fmt, signed_value=signed_value, link=link, stores=stores, categories=categories,
+                                                       scope=scope, base=base, source_name=source_name, synthetic=synthetic)
 
 
 def _note(item):

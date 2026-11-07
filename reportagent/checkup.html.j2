@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营体检 wk{{ c.week }}</title>
+<style>{% include "report_base.css.j2" %}
+.select { border-top:.75px solid var(--hair); border-bottom:.75px solid var(--hair); padding:8px 0; margin:12px 0; display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+.select label { font-size:12.5px; display:block; }
+.select select { display:block; margin-top:2px; height:30px; min-width:130px; padding:0 6px; border:1px solid #888; background:#fff; font:inherit; font-size:13px; }
+.select button { height:30px; padding:0 14px; border:1px solid #111; background:#111; color:#fff; font:inherit; font-size:13px; cursor:pointer; }
+td a { color:inherit; }
+</style>
+</head>
+<body>
+<main>
+<h1>{{ scope }} 经营体检报告</h1>
+<p class="meta-line">检查周：第 {{ c.week }} 周（{{ c.period.start }} 至 {{ c.period.end }}）　指标：{{ c.metric_label }}　数据截至：{{ c.latest_date }}</p>
+<hr class="head-rule">
+{% if synthetic %}<div class="synthetic">合成演示数据，不代表任何真实业务</div>{% endif %}
+
+<h2>摘要</h2>
+<div class="summary">
+  <p>1. <b>检查 {{ c.checked }} 条序列，{{ c.flagged }} 条明显偏离预期</b>：{{ c.up }} 条高于预期，{{ c.down }} 条低于预期。{% if c.flagged %}合计差额 {{ signed_value(c.net_impact) }}。{% endif %}</p>
+  {% if c['items'] %}{% set t = c['items'][0] %}<p>2. <b>差额最大的是 {{ t.store_name }} · {{ t.category }}</b>：实际 {{ fmt(t.actual) }}，预期 {{ fmt(t.expected) }}，差 {{ signed_value(t.impact) }}。{{ t.why.hint }}</p>
+  {% else %}<p>2. <b>这周没有需要优先处理的范围。</b>这不代表没有波动，只是没有超过过去 {{ c.backtest_weeks - 1 }} 周的偏差，且金额达到 {{ fmt(c.floor) }}。</p>{% endif %}
+</div>
+
+<form class="select no-print" method="get" action="{{ base }}">
+  <label>{{ c.labels.store or '门店' }}<select name="store"><option value="">全部</option>{% for s in stores %}<option value="{{ s.id }}"{{ ' selected' if s.id == c.store }}>{{ s.name }}</option>{% endfor %}</select></label>
+  <label>{{ c.labels.category or '品类' }}<select name="category"><option value="">全部</option>{% for x in categories %}<option value="{{ x }}"{{ ' selected' if x == c.category }}>{{ x }}</option>{% endfor %}</select></label>
+  <label>指标<select name="metric"><option value="sales"{{ ' selected' if c.metric == 'sales' }}>销售额</option><option value="qty"{{ ' selected' if c.metric == 'qty' }}>销量</option></select></label>
+  <button>应用</button>
+</form>
+{% if c.origin_note %}<p class="note">{{ c.origin_note }}。</p>{% endif %}
+
+{% if c['items'] %}
+<h2>一、优先处理清单（按差额排序）</h2>
+<div class="caption">表 1　明显偏离预期的范围</div>
+<div class="scroll"><table>
+  <tr><th>范围</th><th>实际</th><th>预期</th><th>正常范围</th><th>差额</th><th>预期来源</th><th>下周预计</th></tr>
+  {% for a in c['items'] %}<tr><td><a href="{{ link(a) }}">{{ a.store_name }} · {{ a.category }}</a></td><td>{{ fmt(a.actual) }}</td><td>{{ fmt(a.expected) }}</td><td>{{ fmt(a.low) }} 至 {{ fmt(a.high) }}</td><td>{{ signed_value(a.impact) }}</td><td>{{ a.source }}</td><td>{{ fmt(a.next_forecast) }}</td></tr>{% endfor %}
+</table></div>
+<p class="source">数据来源：{{ source_name }}，代码计算。点范围名称可查看预测、回测和 SHAP。{% if c.flagged > c['items'] | length %}共 {{ c.flagged }} 条，这里显示差额最大的 {{ c['items'] | length }} 条。{% endif %}</p>
+
+<h2>二、差在哪里</h2>
+{% for a in c['items'] %}
+<h3>{{ loop.index }}. {{ a.store_name }} · {{ a.category }}（{{ '高于' if a.up else '低于' }}预期）</h3>
+{% set w = a.why %}
+<ul class="plain">
+  <li>这周 {{ fmt(w.now) }}，近 8 周周均 {{ fmt(w.prior) }}。{% if w.levers %}单量指数 {{ w.levers.tickets_index | fi }}，{{ '客单价' if c.metric == 'sales' else '客件数' }}指数 {{ w.levers.per_ticket_index | fi }}（近 8 周周均 = 100）。{% endif %}</li>
+  {% if w.subcategory %}<li>{{ c.labels.subcategory }}：{{ w.subcategory.name }}（{{ signed_value(w.subcategory.delta) }}）。</li>{% endif %}
+  {% if w.family %}<li>{{ c.labels.family }}：{{ w.family.name }}（{{ signed_value(w.family.delta) }}）。</li>{% endif %}
+  <li>排查方向：{{ w.hint }}</li>
+  <li>下周（第 {{ a.next_week }} 周）预计 {{ fmt(a.next_forecast) }}，来自{{ a.next_method }}。</li>
+</ul>
+{% endfor %}
+{% endif %}
+
+<h2>附：口径与方法</h2>
+<ul class="plain note">
+  <li>预期：回测里没见过这一周的提前 1 周预测；模型在该范围赢过基线时用模型，否则用基线。</li>
+  <li>异常：实际与预期的比值，超出其余 {{ c.backtest_weeks - 1 }} 周的全部范围，且差额不小于全部范围当周的 0.5%（{{ fmt(c.floor) }}）。数据稳定时，单条序列的误报率约为 {{ '%.0f%%' | format(200 / c.backtest_weeks) }}。</li>
+  <li>“差在哪里”是相对近 8 周周均的拆解，只说明发生在哪里，不代表因果。排查方向由规则给出，需要结合业务确认。</li>
+  {% if not c.model_available %}<li>当前环境无法加载模型，预期全部来自基线。</li>{% endif %}
+</ul>
+</main>
+</body>
+</html>

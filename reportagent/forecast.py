@@ -27,7 +27,8 @@ from .warehouse import DataUnavailable, Period, parse_week, week_of
 
 HISTORY_WEEKS = 104
 HORIZONS = (1, 2, 3, 4)
-BACKTEST_WEEKS = 12
+BACKTEST_WEEKS = 26  # 实测 12 周窗口下“模型赢”部分靠运气，半年更稳
+REFIT_EVERY = 4  # 回测每 4 周重训一次，中间几周用更早的模型：不泄漏，也让训练不随窗口变慢
 MIN_WEEKS = 8 + BACKTEST_WEEKS + max(HORIZONS) + 6
 SPARSE_WEEK = 0.6  # 全仓最新一周不足前 4 周均值的这个比例，视为数据没入齐
 PARAMS = {"objective": "huber", "learning_rate": 0.03, "num_leaves": 7, "min_data_in_leaf": 30, "bagging_fraction": 0.8,
@@ -39,8 +40,8 @@ METRICS = {"sales": "销售额", "qty": "销量"}
 BASELINES = {"last": "上周值", "mean4": "近 4 周均值", "mean8": "近 8 周均值"}
 # (展示名, 对应的特征列)
 GROUPS = [("上周表现", [0]), ("前 2 到 4 周表现", [1, 2, 3, 4]), ("价格变化", [5]), ("大盘走势", [6]),
-          ("去年同期季节性", [7, 8]), ("经营规模", [9])]
-FEATURE_COUNT = 10
+          ("去年同期季节性", [7, 8]), ("经营规模", [9]), ("活动日历", [10])]
+FEATURE_COUNT = 11
 
 
 @dataclass
@@ -51,6 +52,7 @@ class Panel:
     y: np.ndarray  # 序列 × 周
     sales: np.ndarray
     qty: np.ndarray
+    events: tuple = ()  # (名称, 开始, 结束)，来自语义配置。这些日期事先已知，可以用于未来周
 
 
 _load_error = None
@@ -86,7 +88,9 @@ def load_panel(wh, metric, week):
     frame = wh.aggregate("sales", ["store", "category"], measures, periods, None, "预测：门店 × 品类周度历史")
     if frame.empty:
         raise DataUnavailable("销售表在这段时间没有数据，无法预测。")
-    return _trim_leading_weeks(build_panel(frame, weeks, metric))
+    panel = build_panel(frame, weeks, metric)
+    panel.events = wh.semantic.events
+    return _trim_leading_weeks(panel)
 
 
 def build_panel(frame, weeks, metric):
@@ -113,11 +117,17 @@ def _trim_leading_weeks(p):
     start = int(active[0])
     if len(p.weeks) - start < MIN_WEEKS:
         raise DataUnavailable(f"历史只有 {len(p.weeks) - start} 周，至少需要 {MIN_WEEKS} 周才能预测和回测。")
-    return Panel(p.weeks[start:], p.stores, p.categories, *[a[:, start:] for a in (p.y, p.sales, p.qty)])
+    return Panel(p.weeks[start:], p.stores, p.categories, *[a[:, start:] for a in (p.y, p.sales, p.qty)], p.events)
 
 
 def _ratio(a, b, default=1.0):
     return np.divide(a, b, out=np.full(np.shape(a), default, dtype=float), where=np.asarray(b) > 0)
+
+
+def event_days(events, monday):
+    """目标周里有几天落在活动窗口内。"""
+    days = [monday + timedelta(days=i) for i in range(7)]
+    return sum(any(start <= d <= end for _, start, end in events) for d in days)
 
 
 def features(p, t, h):
@@ -135,7 +145,8 @@ def features(p, t, h):
         base = y[:, t - 59:t - 51].mean(1)
         season = np.minimum(_ratio(y[:, t + h - 53:t + h - 50].mean(1), base), 5.0)
         known = (base > 0).astype(float)
-    return np.column_stack([*lags, recent, price, market, season, known, np.log1p(scale)]), scale
+    event = np.full(len(y), event_days(p.events, p.weeks[t] + timedelta(days=7 * h)))
+    return np.column_stack([*lags, recent, price, market, season, known, np.log1p(scale), event]), scale
 
 
 def _pairs(p, h):
@@ -170,11 +181,14 @@ def train(p):
         if lgb and len(y) < 200:
             lgb = None  # 样本太少，树模型没有意义
         rows = []
-        for origin in range(last - BACKTEST_WEEKS + 1 - h, last - h + 1):
+        origin_range = range(last - BACKTEST_WEEKS + 1 - h, last - h + 1)
+        model = None
+        for i, origin in enumerate(origin_range):
             pred = None
             if lgb:
-                seen = origins + h <= origin  # 只用目标周在起点之前的样本
-                model = _fit(lgb, x[seen], y[seen], w[seen])
+                if model is None or (len(origin_range) - 1 - i) % REFIT_EVERY == 0:  # 对齐到最新一周，异常检测用的是最新的模型
+                    seen = origins + h <= origin  # 只用目标周在起点之前的样本
+                    model = _fit(lgb, x[seen], y[seen], w[seen])
                 now, scale = features(p, origin, h)
                 pred = model.predict(now) * scale
             rows.append({"target": origin + h, "model": pred, "actual": p.y[:, origin + h], **_baselines(p.y, origin)})
@@ -219,6 +233,40 @@ def _interval(rows, mask, name):
     return np.percentile(ratios, [10, 90]) if len(ratios) >= 8 else (None, None)
 
 
+def accuracy(rows, mask, name):
+    """偏差：预测总体偏高还是偏低。区间覆盖率：每周用其余周算区间，实际落在里面的比例，不拿自己验证自己。"""
+    actual = np.array([r["actual"][mask].sum() for r in rows])
+    pred = np.array([r[name][mask].sum() for r in rows])
+    ok = pred > 0
+    ratio = actual[ok] / pred[ok]
+    hits = [np.percentile(np.delete(ratio, i), 10) <= v <= np.percentile(np.delete(ratio, i), 90) for i, v in enumerate(ratio)] if len(ratio) >= 8 else []
+    return {"bias": (pred.sum() - actual.sum()) / actual.sum() * 100 if actual.sum() > 0 else None,
+            "coverage": float(np.mean(hits)) * 100 if hits else None}
+
+
+def detect_anomalies(trained, mask):
+    """逐周比较实际和“回测里没见过这一周的预测”。偏差比其余所有周都大才算异常。
+    不假设分布；数据稳定时，误报率约为 2 / 回测周数。"""
+    method = _method(trained, mask, 1)
+    name = "model" if method["beats"] else method["baseline"]
+    rows = trained["backtest"][1]
+    actual = np.array([r["actual"][mask].sum() for r in rows])
+    expected = np.array([r[name][mask].sum() for r in rows])
+    valid = np.flatnonzero(expected > 0)
+    ratio = actual[valid] / expected[valid]
+    out = []
+    for n, i in enumerate(valid):
+        others = np.delete(ratio, n)
+        if len(others) < 8:
+            continue
+        low, high = float(others.min()), float(others.max())
+        flag = "up" if ratio[n] > high else "down" if ratio[n] < low else None
+        out.append({"target": rows[i]["target"], "actual": float(actual[i]), "expected": float(expected[i]), "low": float(expected[i]) * low,
+                    "high": float(expected[i]) * high, "flag": flag, "impact": float(actual[i] - expected[i]),
+                    "source": "模型" if method["beats"] else f"基线（{method['baseline_name']}）"})
+    return out
+
+
 def shap_attribution(trained, mask, h=1):
     """把下一周的模型预测拆成：近 8 周周均 + 历史平均趋势 + 各因素贡献。三者相加等于模型预测。"""
     entry = trained["final"][h]
@@ -229,7 +277,7 @@ def shap_attribution(trained, mask, h=1):
     rows = contrib[mask] * scale[:, None]
     start = float(scale.sum())
     items = [{"factor": name, "value": float(rows[:, cols].sum()), "share": float(rows[:, cols].sum()) / start * 100 if start else 0.0}
-             for name, cols in GROUPS]
+             for name, cols in GROUPS if name != "活动日历" or trained["panel"].events]
     items.sort(key=lambda x: -abs(x["value"]))
     trend = float(rows[:, FEATURE_COUNT].sum()) - start
     return {"start": start, "trend": trend, "items": items, "model": start + trend + sum(i["value"] for i in items)}
@@ -307,9 +355,10 @@ def forecast(wh, store=None, category=None, metric="sales", week=None):
         rows.append({"h": h, "week": week_of(monday), "start": str(monday), "end": str(monday + timedelta(days=6)), "forecast": point,
                      "low": point * low if low is not None else None, "high": point * high if high is not None else None,
                      "method": "模型" if method["beats"] else f"基线（{method['baseline_name']}）",
-                     "vs_ly": point / ly * 100 if ly else None, "ly": ly, **method})
+                     "vs_ly": point / ly * 100 if ly else None, "ly": ly, **method, **accuracy(trained["backtest"][h], mask, name)})
 
     recent = trained["backtest"][1][-8:]
+    flags = {a["target"]: a["flag"] for a in detect_anomalies(trained, mask)}
     return {
         "metric": metric, "metric_label": METRICS[metric], "store": store, "category": category, "origin": week,
         "origin_period": {"start": str(p.weeks[last]), "end": str(p.weeks[last] + timedelta(days=6))},
@@ -318,6 +367,6 @@ def forecast(wh, store=None, category=None, metric="sales", week=None):
         "history": [{"week": week_of(d), "value": float(v)} for d, v in list(zip(p.weeks, series))[-16:]],
         "backtest": [{"week": week_of(p.weeks[r["target"]]), "actual": float(r["actual"][mask].sum()),
                       "model": float(r["model"][mask].sum()) if r["model"] is not None else None,
-                      "baseline": float(r[rows[0]["baseline"]][mask].sum())} for r in recent],
+                      "baseline": float(r[rows[0]["baseline"]][mask].sum()), "flag": flags.get(r["target"])} for r in recent],
         "backtest_weeks": BACKTEST_WEEKS, "queries": trained["queries"],
     }

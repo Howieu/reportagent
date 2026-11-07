@@ -1,5 +1,5 @@
 import {
-  ArrowUp, Check, ChevronDown, ChevronRight, Download, Ellipsis, ExternalLink, FileText, Filter, Folder, FolderInput, FolderOpen, FolderPlus,
+  Activity, ArrowUp, Check, ChevronDown, ChevronRight, Download, Ellipsis, ExternalLink, FileText, Filter, Folder, FolderInput, FolderOpen, FolderPlus,
   Menu, PanelLeft, PanelRight, Pencil, Plus, Search, Square, SquarePen, ThumbsDown, ThumbsUp, Trash2, TrendingUp, X,
 } from 'lucide';
 import { MorphIcon } from 'morphicons/react';
@@ -167,6 +167,7 @@ function Sidebar({ meta, conversations, projects, activeId, activeProject, onNew
         <button onClick={onReport}><Icon icon={FileText} />生成报告</button>
         {meta?.has_funnel && <button onClick={() => onPages()}><Icon icon={Filter} />漏斗分析</button>}
         <button onClick={() => onPages('/forecast', '销量预测')}><Icon icon={TrendingUp} />销量预测</button>
+        <button onClick={() => onPages('/checkup', '经营体检')}><Icon icon={Activity} />经营体检</button>
       </nav>
       <div className="history">
         <div className="section-head">
@@ -418,7 +419,7 @@ function Composer({ meta, busy, assist, onAssist, web, onWeb, onSend, onStop, on
 }
 
 // ---------- 右侧面板 ----------
-const pdfUrl = (url) => url.replace(/^\/(funnel|forecast)/, '/$1/pdf');
+const pdfUrl = (url) => url.replace(/^\/(funnel|forecast|checkup)/, '/$1/pdf');
 
 function Panel({ panel, serverPdf, onClose, onAsk }) {
   const frame = useRef(null);
@@ -431,7 +432,7 @@ function Panel({ panel, serverPdf, onClose, onAsk }) {
     try { doc = frame.current.contentDocument; } catch { return; }
     if (!doc) return;
     const path = doc.location?.pathname || '';
-    if (path.startsWith('/funnel') || path.startsWith('/forecast')) {
+    if (/^\/(funnel|forecast|checkup)/.test(path)) {
       const current = path + doc.location.search;
       setLinks({ open: current, pdf: pdfUrl(current) });
     }

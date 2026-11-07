@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import pandas as pd
 
 from .analysis import analyze, idx, ratio
+from .checkup import checkup, what_if
 from .forecast import forecast
 from .funnel import analyze_funnel
 from .narrative import FACTOR_NAMES, facts_summary, fi, money, num
@@ -85,6 +86,24 @@ SCHEMAS = [
             "metric": {"type": "string", "enum": ["sales", "qty"], "description": "sales 是销售额，qty 是销量（件数）"},
             "week": {"type": "string", "description": "预测起点 ISO 周次 YYYYWW，不填用最近完整周"},
         }}}},
+    {"type": "function", "function": {
+        "name": "business_checkup",
+        "description": "经营体检：找出最新一周明显偏离预期的门店 × 品类，按金额排序，并拆解单量、单件价值、子类和品牌，给出下周预计。问哪里有问题、哪里异常、这周要关注什么时使用。",
+        "parameters": {"type": "object", "properties": {
+            "store": {"type": "string"}, "category": {"type": "string"},
+            "metric": {"type": "string", "enum": ["sales", "qty"]}, "week": {"type": "string"},
+        }}}},
+    {"type": "function", "function": {
+        "name": "what_if_forecast",
+        "description": "情景试算：在下周预测上算单量或单件价值变化后的结果，或反推达到目标需要的幅度，并给出这个幅度历史上有多常见。只是算术，不代表因果。change_pct 和 target 只填一个。",
+        "parameters": {"type": "object", "properties": {
+            "store": {"type": "string"}, "category": {"type": "string"},
+            "metric": {"type": "string", "enum": ["sales", "qty"]},
+            "lever": {"type": "string", "enum": ["tickets", "per_ticket"], "description": "tickets 是单量；per_ticket 是单件价值，销售额下为客单价，销量下为客件数"},
+            "change_pct": {"type": "number", "description": "变化百分比，提高 5% 填 5"},
+            "target": {"type": "number", "description": "目标值，用于反推需要的幅度"},
+            "week": {"type": "string"},
+        }, "required": ["lever"]}}},
     {"type": "function", "function": {
         "name": "list_values",
         "description": "查看某维度有哪些取值，例如门店、品类、品牌。",
@@ -535,6 +554,57 @@ class Tools:
                 "queries": [{"purpose": q["purpose"], "sql": q["sql"][:1500], "ms": q["ms"], "rows": q["rows"]} for q in f["queries"]],
                 "facts": "\n".join(lines), "fallback": fallback, "suggestions": ["这个预测的回测准不准", "按销量再预测一次"]}
 
+    def business_checkup(self, args):
+        store = self.resolve("store", args["store"]) if args.get("store") else None
+        category = self.resolve("category", args["category"]) if args.get("category") else None
+        metric = args.get("metric") or "sales"
+        try:
+            c = checkup(self.wh, store, category, metric, args.get("week"))
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        fmt = c["fmt"]
+        columns = [{"key": "scope", "label": "范围", "kind": "text"}, {"key": "actual", "label": "实际", "kind": "text"}, {"key": "expected", "label": "预期", "kind": "text"},
+                   {"key": "impact", "label": "差额", "kind": "text"}, {"key": "cause", "label": "主要落在", "kind": "text"}, {"key": "next", "label": "下周预计", "kind": "text"}]
+        rows, lines = [], []
+        for a in c["items"]:
+            why = a["why"]
+            labels = c["labels"]
+            cause = "，".join(f"{labels[k]} {why[k]['name']}" for k in ("subcategory", "family") if why[k]) or "—"
+            rows.append({"scope": f"{a['store_name']} · {a['category']}", "actual": fmt(a["actual"]), "expected": fmt(a["expected"]),
+                         "impact": ("+" if a["impact"] >= 0 else "") + fmt(a["impact"]), "cause": cause, "next": fmt(a["next_forecast"])})
+            lever = ""
+            if why["levers"]:
+                lever = f"相对近 8 周周均，单量指数 {why['levers']['tickets_index']:.0f}，单件价值指数 {why['levers']['per_ticket_index']:.0f}。"
+            lines.append(f"{a['store_name']} {a['category']}：实际 {fmt(a['actual'])}，预期 {fmt(a['expected'])}（来自{a['source']}），差 {rows[-1]['impact']}。{lever}主要落在 {cause}。{why['hint']}下周预计 {fmt(a['next_forecast'])}（来自{a['next_method']}）。")
+        head = f"第 {c['week']} 周检查 {c['checked']} 条序列，{c['flagged']} 条明显偏离预期（{c['up']} 条高于、{c['down']} 条低于）。"
+        query = urlencode({k: v for k, v in {"store": store, "category": category, "metric": metric, "week": args.get("week")}.items() if v})
+        fallback = head + (f"差额最大的是{rows[0]['scope']}，差 {rows[0]['impact']}。" if rows else "没有需要优先处理的范围。")
+        return {"kind": "table", "title": f"第 {c['week']} 周经营体检", "columns": columns, "rows": rows, "display": rows, "chart": None,
+                "assumptions": [c["origin_note"]] if c["origin_note"] else [], "note": None, "total_rows": len(rows),
+                "open": {"title": "经营体检", "url": f"/checkup?{query}", "label": "打开体检报告，查看完整定位"}, "queries": [],
+                "facts": "\n".join([head, *lines, "“预期”是回测里没见过这一周的预测。差异定位只说明发生在哪里，不代表因果。"]), "fallback": fallback,
+                "suggestions": ["这些范围下周预计怎么走", "生成差额最大范围的周报"]}
+
+    def what_if_forecast(self, args):
+        store = self.resolve("store", args["store"]) if args.get("store") else None
+        category = self.resolve("category", args["category"]) if args.get("category") else None
+        metric = args.get("metric") or "sales"
+        try:
+            w = what_if(self.wh, store, category, metric, args.get("lever") or "tickets", args.get("change_pct"), args.get("target"), args.get("week"))
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        fmt = w["forecast"]["fmt"]
+        delta = ("+" if w["delta"] >= 0 else "") + fmt(w["delta"])
+        columns = [{"key": "item", "label": "项目", "kind": "text"}, {"key": "value", "label": "数值", "kind": "text"}]
+        rows = [{"item": "当前预测", "value": fmt(w["base"])}, {"item": f"{w['lever_label']}变化", "value": f"{w['change']:+.1f}%"},
+                {"item": "试算结果", "value": fmt(w["result"])}, {"item": "差额", "value": delta},
+                {"item": "历史上达到这个幅度", "value": f"{w['reached']} / {w['weeks']} 周"}]
+        text = (f"第 {w['week']} 周{w['metric_label']}当前预测 {fmt(w['base'])}（来自{w['base_method']}）。{w['lever_label']}变化 {w['change']:+.1f}%，其他不变时约 {fmt(w['result'])}，差 {delta}。"
+                f"过去 {w['weeks']} 周里，{w['lever_label']}相对前 8 周均值达到这一幅度的有 {w['reached']} 周，最高 {w['max_up']:+.0f}%，最低 {w['max_down']:+.0f}%。这是算术试算，不代表做了某个动作就会带来这个变化。")
+        return {"kind": "table", "title": f"情景试算 · {w['lever_label']} {w['change']:+.1f}%", "columns": columns, "rows": rows, "display": rows, "chart": None,
+                "assumptions": [w["forecast"]["origin_note"]] if w["forecast"]["origin_note"] else [], "note": None, "total_rows": len(rows), "queries": [],
+                "facts": text, "fallback": text, "suggestions": ["换一个杠杆再算一次", "这个范围的预测准不准"]}
+
     def web_search(self, args):
         query = str(args.get("query") or "").strip()
         if not query:
@@ -574,7 +644,7 @@ class Tools:
     def call(self, name, args):
         handler = {"query_metrics": self.query_metrics, "explain_change": self.explain_change,
                    "generate_report": self.generate_report, "list_values": self.list_values,
-                   "funnel_analysis": self.funnel_analysis, "forecast_sales": self.forecast_sales, "web_search": self.web_search}.get(name)
+                   "funnel_analysis": self.funnel_analysis, "forecast_sales": self.forecast_sales, "business_checkup": self.business_checkup, "what_if_forecast": self.what_if_forecast, "web_search": self.web_search}.get(name)
         if not handler:
             raise ToolError(f"未知工具 {name}")
         try:

@@ -159,3 +159,122 @@ def test_forecast_page_and_scope_selection(demo_app, week):
     assert overall.status_code == 200 and "全部" in overall.text
     assert client.get("/forecast", params={"store": "NOPE", "week": week}).status_code == 400
     assert client.get("/forecast", params={"week": "abc"}).status_code == 400
+
+
+def test_future_event_calendar_is_learned_and_known_ahead():
+    y = seasonal(weeks=90) * 0 + 100.0
+    start = date(2024, 1, 1)
+    events = []
+    for t in range(9, 90, 9):
+        monday = start + timedelta(days=7 * t)
+        events.append(("大促", monday, monday + timedelta(days=6)))
+        y[:, t] *= 3
+    p = panel(y)
+    p.events = tuple(events)
+    x, _ = F.features(p, 44, 1)  # 第 45 周是活动周
+    assert x[0, 10] == 7
+    x, _ = F.features(p, 45, 1)
+    assert x[0, 10] == 0
+    s = F.shap_attribution(F.train(p), np.array([True] + [False] * 7), 1)
+    assert any(i["factor"] == "活动日历" for i in s["items"])
+
+
+def test_bad_event_calendar_is_refused():
+    from reportagent.config import ConfigError, _events
+
+    assert _events([{"name": "x", "start": "2026-01-01"}])[0][1] == date(2026, 1, 1)
+    with pytest.raises(ConfigError):
+        _events([{"start": "2026-01-02", "end": "2026-01-01"}])
+    with pytest.raises(ConfigError):
+        _events([{"name": "没有日期"}])
+
+
+def test_accuracy_reports_bias_and_out_of_sample_coverage():
+    rows = [{"actual": np.array([100.0 + i]), "m": np.array([110.0])} for i in range(12)]
+    a = F.accuracy(rows, np.array([True]), "m")
+    assert a["bias"] > 0  # 预测总体偏高
+    assert 0 <= a["coverage"] <= 100
+
+
+def test_anomaly_detection_finds_injected_shock_and_stays_quiet_otherwise():
+    y = np.random.default_rng(5).normal(1000, 60, (8, 70)).clip(1)
+    y[0, -1] = 3000
+    y[1, -1] = 200
+    trained = F.train(panel(y))
+
+    def flag(i):
+        mask = np.zeros(8, dtype=bool)
+        mask[i] = True
+        return F.detect_anomalies(trained, mask)
+
+    assert flag(0)[-1]["flag"] == "up" and flag(0)[-1]["impact"] > 0
+    assert flag(1)[-1]["flag"] == "down" and flag(1)[-1]["impact"] < 0
+    quiet = [a["flag"] for i in range(2, 8) for a in flag(i)]
+    assert sum(f is not None for f in quiet) / len(quiet) < 0.2
+    assert all(a["low"] <= a["expected"] * 2 for a in flag(0))
+
+
+def test_checkup_ranks_and_explains(demo_app, week):
+    from reportagent.checkup import checkup
+
+    F._cache.clear()
+    c = checkup(demo_app.wh, week=week)
+    assert c["checked"] > 0 and c["flagged"] == c["up"] + c["down"]
+    impacts = [abs(a["impact"]) for a in c["items"]]
+    assert impacts == sorted(impacts, reverse=True)
+    for a in c["items"]:
+        assert (a["impact"] > 0) == a["up"] and a["why"]["hint"] and a["next_forecast"] >= 0
+    only = checkup(demo_app.wh, "S01", week=week)
+    assert all(a["store"] == "S01" for a in only["items"])
+    with pytest.raises(DataUnavailable):
+        checkup(demo_app.wh, "NOPE", week=week)
+
+
+def test_shift_explanation_identity_and_direction(demo_app, week):
+    from reportagent.checkup import explain_shift
+
+    w = explain_shift(demo_app.wh, "S01", "SKINCARE", "sales", week, True)
+    assert w["levers"]["tickets"] + w["levers"]["per_ticket"] == pytest.approx(100)
+    assert w["levers"]["tickets_index"] * w["levers"]["per_ticket_index"] / 100 == pytest.approx(w["now"] / w["prior"] * 100)
+    assert w["subcategory"] is None or w["subcategory"]["delta"] > 0
+
+
+def test_what_if_is_arithmetic_and_reports_history(demo_app, week):
+    from reportagent.checkup import what_if
+
+    w = what_if(demo_app.wh, "S01", "SKINCARE", "sales", "per_ticket", change=10, week=week)
+    assert w["result"] == pytest.approx(w["base"] * 1.1) and w["delta"] == pytest.approx(w["base"] * 0.1)
+    assert 0 <= w["reached"] <= w["weeks"] and w["lever_label"] == "客单价"
+    target = what_if(demo_app.wh, "S01", "SKINCARE", "sales", "tickets", target=w["base"] * 1.2, week=week)
+    assert target["change"] == pytest.approx(20)
+    assert what_if(demo_app.wh, "S01", "SKINCARE", "qty", "per_ticket", change=-5, week=week)["lever_label"] == "客件数"
+    with pytest.raises(ValueError):
+        what_if(demo_app.wh, metric="sales", lever="tickets", week=week)
+    with pytest.raises(ValueError):
+        what_if(demo_app.wh, metric="sales", lever="nope", change=1, week=week)
+    with pytest.raises(ValueError, match="超出"):
+        what_if(demo_app.wh, metric="sales", lever="tickets", change=900, week=week)
+
+
+def test_new_tools_and_pages(demo_app, week):
+    from fastapi.testclient import TestClient
+
+    from reportagent.server import create_app
+
+    tools = Tools(demo_app)
+    c = tools.business_checkup({"week": week})
+    assert c["open"]["url"].startswith("/checkup?") and check_text(c["fallback"], c["facts"]) is None
+    w = tools.what_if_forecast({"store": "S01", "category": "SKINCARE", "lever": "per_ticket", "change_pct": 5, "week": week})
+    assert check_text(w["fallback"], w["facts"]) is None and "不代表" in w["facts"]
+    with pytest.raises(ToolError):
+        tools.what_if_forecast({"lever": "tickets", "week": week})
+
+    client = TestClient(create_app(demo_app))
+    page = client.get("/checkup", params={"week": week})
+    assert page.status_code == 200 and "经营体检" in page.text and "<script" not in page.text
+    assert "default-src 'none'" in page.headers["content-security-policy"]
+    assert client.get("/checkup", params={"store": "NOPE", "week": week}).status_code == 400
+    scenario = client.get("/forecast", params={"store": "S01", "week": week, "lever": "tickets", "change": 5})
+    assert scenario.status_code == 200 and "这个幅度有多常见" in scenario.text
+    bad = client.get("/forecast", params={"store": "S01", "week": week, "lever": "tickets", "change": 900})
+    assert bad.status_code == 200 and "超出" in bad.text

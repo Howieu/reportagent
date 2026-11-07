@@ -10,11 +10,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 from .analysis import analyze
+from .checkup import LEVERS, checkup, what_if
 from .config import load_env, load_semantic
 from .forecast import forecast
 from .narrative import CURRENCY, LLM, write_sections
-from .render import html_to_pdf_bytes, render_forecast, render_html
-from .warehouse import Warehouse
+from .render import html_to_pdf_bytes, render_checkup, render_forecast, render_html
+from .warehouse import DataUnavailable, Warehouse
 
 DATA_DIR = Path(os.environ.get("REPORTAGENT_DATA", "data"))
 
@@ -147,15 +148,30 @@ class App:
     def report_html(self, report_id):
         return self.state.report_html(report_id)
 
-    def forecast_html(self, store=None, category=None, metric="sales", week=None, base="/forecast"):
+    def _scope(self, store, category):
+        names = dict(zip(self.wh.stores()["store"], self.wh.stores()["name"]))
+        return f"{names.get(store, store) if store else '全部' + self.semantic.labels.get('store', '门店')} · {category or '全部品类'}"
+
+    def checkup_html(self, store=None, category=None, metric="sales", week=None):
+        stores = self.wh.stores()
+        return render_checkup(checkup(self.wh, store, category, metric, week), [{"id": r["store"], "name": r["name"]} for _, r in stores.iterrows()],
+                              self.wh.distinct_values("sales", "category"), self._scope(store, category), self.semantic.report_source, self.semantic.synthetic)
+
+    def forecast_html(self, store=None, category=None, metric="sales", week=None, base="/forecast", lever=None, change=None):
         """预测报告不落库：结果按起点缓存，换范围只是重新汇总。"""
         result = forecast(self.wh, store, category, metric, week)
+        scenario, scenario_error = None, None
+        if change is not None:
+            try:
+                scenario = what_if(self.wh, store, category, metric, lever or "tickets", change=float(change), week=week)
+            except (ValueError, DataUnavailable) as exc:
+                scenario_error = str(exc)
         stores = self.wh.stores()
         names = dict(zip(stores["store"], stores["name"]))
         scope = f"{names.get(store, store) if store else '全部' + self.semantic.labels.get('store', '门店')} · {category or '全部品类'}"
         return render_forecast(result, [{"id": r["store"], "name": r["name"]} for _, r in stores.iterrows()],
                                self.wh.distinct_values("sales", "category"), scope, self.semantic.report_source,
-                               self.semantic.synthetic, base)
+                               self.semantic.synthetic, base, scenario, scenario_error, LEVERS[metric], len(self.semantic.events))
 
     def pdf(self, report_id):
         html_text = self.report_html(report_id)

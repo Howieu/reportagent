@@ -258,7 +258,8 @@ def create_app(core: App | None = None) -> FastAPI:
             raise HTTPException(429, "预测太频繁，请稍后再试")
         q = request.query_params
         try:
-            return core.forecast_html(q.get("store") or None, q.get("category") or None, q.get("metric") or "sales", q.get("week") or None)
+            return core.forecast_html(q.get("store") or None, q.get("category") or None, q.get("metric") or "sales", q.get("week") or None,
+                                      lever=q.get("lever") or None, change=q.get("change") or None)
         except (DataUnavailable, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -273,6 +274,27 @@ def create_app(core: App | None = None) -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         return Response(data, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="forecast.pdf"'})
+
+    def _checkup_html(request: Request):
+        if not report_limit.allow(request.state.uid) or not report_limit.allow(client_ip(request)):
+            raise HTTPException(429, "体检太频繁，请稍后再试")
+        q = request.query_params
+        try:
+            return core.checkup_html(q.get("store") or None, q.get("category") or None, q.get("metric") or "sales", q.get("week") or None)
+        except (DataUnavailable, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.get("/checkup", response_class=HTMLResponse)
+    def checkup_page(request: Request):
+        return HTMLResponse(_checkup_html(request), headers={"Content-Security-Policy": REPORT_CSP})
+
+    @api.get("/checkup/pdf")
+    def checkup_pdf(request: Request):
+        try:
+            data = html_to_pdf_bytes(_checkup_html(request))
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return Response(data, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="checkup.pdf"'})
 
     @api.get("/reports/{report_id}", response_class=HTMLResponse)
     def report_html(report_id: str):

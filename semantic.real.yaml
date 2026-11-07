@@ -92,6 +92,8 @@ examples:
   - {type: 情况概览, text: 帮我出一份圣保罗州美妆个护的周报}
   - {type: 趋势分析, text: 近 12 周东南区销售额趋势}
   - {type: 销量预测, text: 预测圣保罗州美妆个护未来 4 周的销售额}
+  - {type: 经营体检, text: 这周哪些卖家州和品类明显偏离预期}
+  - {type: 情景试算, text: 圣保罗州美妆个护客单价提高 5% 下周能卖多少}
   - {type: 漏斗分析, text: 看一下最新一周的浏览到成交漏斗}
   - {type: 漏斗分析, text: 哪些品类加购多但成交转化低}
 verified_questions:
@@ -113,6 +115,12 @@ verified_questions:
   - question: 预测圣保罗州美妆个护下周销售额
     tool: forecast_sales
     args: {store: SP, category: 美妆个护, metric: sales}
+  - question: 这周哪些范围明显偏离预期
+    tool: business_checkup
+    args: {}
+  - question: 圣保罗州美妆个护客单价提高 5% 下周能卖多少
+    tool: what_if_forecast
+    args: {store: SP, category: 美妆个护, lever: per_ticket, change_pct: 5}
   - question: 看一下最新一周的漏斗
     tool: funnel_analysis
     args: {}

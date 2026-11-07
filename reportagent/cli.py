@@ -100,6 +100,32 @@ def cmd_forecast(args):
     return 0
 
 
+def cmd_checkup(args):
+    from .checkup import checkup
+    from .service import App
+    from .warehouse import DataUnavailable
+
+    app = App(args.semantic, llm=False)
+    try:
+        c = checkup(app.wh, args.store, args.category, args.metric, args.week)
+        html_text = app.checkup_html(args.store, args.category, args.metric, args.week)
+    except (DataUnavailable, ValueError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    if c["origin_note"]:
+        print(c["origin_note"])
+    fmt = c["fmt"]
+    print(f"第 {c['week']} 周检查 {c['checked']} 条序列，{c['flagged']} 条明显异常")
+    for a in c["items"]:
+        print(f"{a['store_name']} {a['category']}  实际 {fmt(a['actual'])}  预期 {fmt(a['expected'])}  差 {fmt(a['impact'])}  {a['why']['hint']}")
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"checkup_{args.store or 'all'}_{(args.category or 'all').replace(' ', '')}_{args.metric}_wk{c['week']}.html"
+    path.write_text(html_text, encoding="utf-8")
+    print(path)
+    return 0
+
+
 def cmd_serve(args):
     import uvicorn
 
@@ -148,6 +174,14 @@ def main(argv=None):
     p.add_argument("--week", help="预测起点 YYYYWW，默认最近完整周")
     p.add_argument("--out", default="reports")
     p.set_defaults(func=cmd_forecast)
+
+    p = sub.add_parser("checkup", help="经营体检：找出明显偏离预期的范围，并定位原因")
+    p.add_argument("--store", help="门店 ID，不填表示全部")
+    p.add_argument("--category", help="品类，不填表示全部")
+    p.add_argument("--metric", choices=["sales", "qty"], default="sales", help="sales 销售额，qty 销量")
+    p.add_argument("--week", help="周次 YYYYWW，默认最近完整周")
+    p.add_argument("--out", default="reports")
+    p.set_defaults(func=cmd_checkup)
 
     p = sub.add_parser("serve", help="启动对话和报告工作台")
     p.add_argument("--host", default="127.0.0.1")

@@ -54,15 +54,15 @@
 {% set c.table = c.table + 1 %}
 <div class="caption">表 {{ c.table }}　各预测步长的回测误差（WAPE，越低越好）</div>
 <div class="scroll"><table>
-  <tr><th>提前几周</th><th>模型</th><th>最好的基线</th><th>基线误差</th><th>结论</th></tr>
-  {% for r in f.rows %}<tr><td>{{ r.h }} 周</td><td>{{ ('%.1f%%' | format(r.model_wape)) if r.model_wape is not none else '—' }}</td><td>{{ r.baseline_name }}</td><td>{{ '%.1f%%' | format(r.baseline_wape) }}</td><td>{{ '用模型' if r.beats else '用基线' }}</td></tr>{% endfor %}
+  <tr><th>提前几周</th><th>模型</th><th>最好的基线</th><th>基线误差</th><th>结论</th><th>采用方法的偏差</th><th>区间覆盖率</th></tr>
+  {% for r in f.rows %}<tr><td>{{ r.h }} 周</td><td>{{ ('%.1f%%' | format(r.model_wape)) if r.model_wape is not none else '—' }}</td><td>{{ r.baseline_name }}</td><td>{{ '%.1f%%' | format(r.baseline_wape) }}</td><td>{{ '用模型' if r.beats else '用基线' }}</td><td>{{ ('%+.1f%%' | format(r.bias)) if r.bias is not none else '—' }}</td><td>{{ ('%.0f%%' | format(r.coverage)) if r.coverage is not none else '—' }}</td></tr>{% endfor %}
 </table></div>
-{{ source('滚动回测：每次只用当时已经发生的数据重新训练，再预测之后的周。') }}
+{{ source('滚动回测：只用当时已经发生的数据训练，每 4 周重训一次。偏差为正表示预测总体偏高；区间覆盖率是实际落在 80% 区间内的比例，每周用其余周计算。') }}
 {% set c.table = c.table + 1 %}
 <div class="caption">表 {{ c.table }}　最近 {{ f.backtest | length }} 周的提前 1 周预测和实际</div>
 <div class="scroll"><table>
-  <tr><th>周次</th><th>实际</th><th>模型</th><th>{{ first.baseline_name }}</th></tr>
-  {% for b in f.backtest %}<tr><td>{{ b.week }}</td><td>{{ fmt(b.actual) }}</td><td>{{ fmt(b.model) if b.model is not none else '—' }}</td><td>{{ fmt(b.baseline) }}</td></tr>{% endfor %}
+  <tr><th>周次</th><th>实际</th><th>模型</th><th>{{ first.baseline_name }}</th><th>判断</th></tr>
+  {% for b in f.backtest %}<tr><td>{{ b.week }}</td><td>{{ fmt(b.actual) }}</td><td>{{ fmt(b.model) if b.model is not none else '—' }}</td><td>{{ fmt(b.baseline) }}</td><td>{{ '明显高于预期' if b.flag == 'up' else '明显低于预期' if b.flag == 'down' else '正常' }}</td></tr>{% endfor %}
 </table></div>
 {{ source() }}
 
@@ -86,12 +86,30 @@
 <p class="note">当前环境无法加载模型，没有 SHAP 归因。{% if f.model_error %}原因：{{ f.model_error }}{% endif %}</p>
 {% endif %}
 
+<h2>四、情景试算：下周 {{ first.week }} 如果单量或单件价值变化</h2>
+<form class="select no-print" method="get" action="{{ base }}">
+  {% if f.store %}<input type="hidden" name="store" value="{{ f.store }}">{% endif %}{% if f.category %}<input type="hidden" name="category" value="{{ f.category }}">{% endif %}<input type="hidden" name="metric" value="{{ f.metric }}">
+  <label>杠杆<select name="lever">{% for k, v in lever_names.items() %}<option value="{{ k }}"{{ ' selected' if scenario and scenario.lever == k }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>变化幅度（%）<input name="change" type="number" step="1" min="-90" max="500" value="{{ '%.0f' | format(scenario.change) if scenario else 5 }}"></label>
+  <button>试算</button>
+</form>
+{% if scenario_error %}<p class="note">{{ scenario_error }}</p>{% endif %}
+{% if scenario %}
+<div class="summary">
+  <p><b>{{ scenario.lever_label }}变化 {{ '%+.1f%%' | format(scenario.change) }}，其他不变时，下周{{ f.metric_label }}约 {{ fmt(scenario.result) }}</b>（当前预测 {{ fmt(scenario.base) }}，差 {{ signed_value(scenario.delta) }}）。</p>
+  <p>这个幅度有多常见：过去 {{ scenario.weeks }} 周里，{{ scenario.lever_label }}相对前 8 周均值达到这一幅度的有 {{ scenario.reached }} 周；最高 {{ '%+.0f%%' | format(scenario.max_up) }}，最低 {{ '%+.0f%%' | format(scenario.max_down) }}。</p>
+</div>
+<p class="note">这是恒等式算术，不代表做了某个动作就会带来这个变化，也不考虑杠杆之间的相互影响。</p>
+{% else %}
+<p class="note">填一个变化幅度，查看结果和这个幅度在历史上有多常见。</p>
+{% endif %}
+
 <h2>附：口径与方法</h2>
 <ul class="plain note">
   <li>明细、{{ f.labels.store or '门店' }}合计、{{ f.labels.category or '品类' }}合计和全部合计都是序列，一起训练；提前 1 到 {{ f.rows | length }} 周各一个 LightGBM 模型，每个范围用自己的序列预测，所以各范围的预测不保证严格相加。</li>
   <li>防泄漏：特征只用预测起点及之前的数据，训练样本的目标周不晚于训练截止周，不使用任何同期指标。</li>
   <li>SHAP 用 LightGBM 内置的精确 TreeSHAP。它说明模型依赖什么，不代表改变这个因素就会带来同样的变化。</li>
-  <li>没有促销、节假日、客流和库存特征，无法预判这些事件带来的波动。</li>
+  <li>{% if events %}已使用语义配置里的活动日历（{{ events }} 个）。{% else %}没有配置活动日历。{% endif %}没有客流和库存特征，无法预判它们带来的波动。</li>
 </ul>
 <details><summary>查看执行的 {{ f.queries | length }} 条 SQL</summary>{% for q in f.queries %}<p><b>{{ q.purpose }}</b>（{{ q.ms }} ms，{{ q.rows }} 行）</p><pre>{{ q.sql[:1500] }}{% if q.sql | length > 1500 %}……（已截断，同样的条件聚合按周重复）{% endif %}</pre>{% endfor %}</details>
 </main>
