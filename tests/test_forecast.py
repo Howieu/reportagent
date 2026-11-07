@@ -82,6 +82,11 @@ def test_falls_back_to_baselines_without_the_model_library(monkeypatch):
     assert not F._method(trained, mask, 1)["beats"]
 
 
+def test_load_error_hides_server_paths():
+    text = F._short_error(OSError("libgomp.so.1: cannot open shared object file: /var/task/_vendor/lightgbm/lib/lib_lightgbm.so"))
+    assert "libgomp.so.1" in text and "/var/task" not in text
+
+
 def test_panel_has_every_level_and_totals_match(demo_app, week):
     from reportagent.warehouse import parse_week
 

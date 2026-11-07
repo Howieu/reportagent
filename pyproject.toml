@@ -33,7 +33,7 @@ build-backend = "setuptools.build_meta"
 packages = ["reportagent"]
 
 [tool.setuptools.package-data]
-reportagent = ["*.j2", "static/**/*"]
+reportagent = ["*.j2", "static/**/*", "native/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

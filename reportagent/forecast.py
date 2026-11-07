@@ -10,10 +10,14 @@
 SHAP 用 LightGBM 自带的精确 TreeSHAP，解释的是模型，不是因果。
 """
 
+import ctypes
+import re
+import sys
 import threading
 import time
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -49,12 +53,28 @@ class Panel:
     qty: np.ndarray
 
 
+_load_error = None
+
+
+def _short_error(exc):
+    """只留库名和原因，页面上不暴露服务器目录。"""
+    return re.sub(r"/[^\s:'\"]*/", "", str(exc))[:200]
+
+
 def _load_lightgbm():
-    """Linux 上依赖系统的 libgomp，缺失时退回基线，不让整个服务起不来。"""
+    """Linux 上依赖 libgomp。Vercel 由构建脚本打包到 native/，先载入后 LightGBM 才能按库名找到它。
+    加载失败时退回基线，不让整个服务起不来。"""
+    global _load_error
+    bundled = Path(__file__).parent / "native" / "libgomp.so.1"
     try:
+        if bundled.exists():
+            ctypes.CDLL(str(bundled), mode=ctypes.RTLD_GLOBAL)
         import lightgbm
-    except (ImportError, OSError):
+    except (ImportError, OSError) as exc:
+        _load_error = _short_error(exc)
+        print(f"LightGBM 加载失败：{_load_error}", file=sys.stderr)
         return None
+    _load_error = None
     return lightgbm
 
 
@@ -293,7 +313,7 @@ def forecast(wh, store=None, category=None, metric="sales", week=None):
     return {
         "metric": metric, "metric_label": METRICS[metric], "store": store, "category": category, "origin": week,
         "origin_period": {"start": str(p.weeks[last]), "end": str(p.weeks[last] + timedelta(days=6))},
-        "latest_date": str(wh.latest_date()), "origin_note": origin_note, "model_available": trained["model_available"],
+        "latest_date": str(wh.latest_date()), "origin_note": origin_note, "model_available": trained["model_available"], "model_error": _load_error,
         "rows": rows, "shap": shap_attribution(trained, mask), "labels": labels, "fmt": fmt,
         "history": [{"week": week_of(d), "value": float(v)} for d, v in list(zip(p.weeks, series))[-16:]],
         "backtest": [{"week": week_of(p.weeks[r["target"]]), "actual": float(r["actual"][mask].sum()),

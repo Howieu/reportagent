@@ -83,7 +83,7 @@
 </table></div>
 {{ source('各项相加等于模型预测。') }}
 {% else %}
-<p class="note">当前环境无法加载模型，没有 SHAP 归因。</p>
+<p class="note">当前环境无法加载模型，没有 SHAP 归因。{% if f.model_error %}原因：{{ f.model_error }}{% endif %}</p>
 {% endif %}
 
 <h2>附：口径与方法</h2>

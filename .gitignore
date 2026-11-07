@@ -13,6 +13,7 @@ report*.html
 site/node_modules/
 
 reports/
+reportagent/native/
 *.duckdb
 *.duckdb.wal
 *.egg-info/
